@@ -33,6 +33,12 @@ mod test {
         assert_eq!(sp3.coord_system, "IGS14");
         assert_eq!(sp3.orbit_type, OrbitType::FIT);
         assert_eq!(sp3.agency, "IGS");
+        assert_eq!(sp3.week_counter, (2077, 0.0_f64));
+        assert_eq!(sp3.epoch_interval, Duration::from_seconds(300.0_f64));
+        assert_eq!(sp3.mjd_start, (58783, 0.0_f64));
+
+        let mut positions: Vec<_> = sp3.position_clock().collect();
+        println!("{:?}", positions);
 
         /*
          * Test file comments

@@ -55,6 +55,10 @@ fn velocity_error(content: &str) -> bool {
     content.starts_with("EV")
 }
 
+fn new_epoch(content: &str) -> bool {
+    content.starts_with("*  ")
+}
+
 #[derive(Default, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Version {
     #[default]
@@ -193,6 +197,10 @@ pub enum Error {
 
 #[derive(Debug, Error)]
 pub enum ParsingError {
+    #[error("malformed header line #1")]
+    MalformedH1,
+    #[error("malformed header line #2")]
+    MalformedH2,
     #[error("failed to parse epoch year from \"{0}\"")]
     EpochYear(String),
     #[error("failed to parse epoch month from \"{0}\"")]
@@ -213,6 +221,14 @@ pub enum ParsingError {
     WeekCounter(String),
     #[error("failed to parse hifitime::Epoch")]
     Epoch,
+    #[error("failed to parse sample rate from \"{0}\"")]
+    EpochInterval(String),
+    #[error("failed to parse mjd start \"{0}\"")]
+    Mjd(String),
+    #[error("failed to parse sv from \"{0}\"")]
+    Sv(String),
+    #[error("failed to parse (x, y, or z) coordinates from \"{0}\"")]
+    Coordinates(String),
 }
 
 impl SP3 {
@@ -227,12 +243,14 @@ impl SP3 {
         let mut orbit_type = OrbitType::default();
         let mut agency = String::from("Unknown");
         let mut week_counter = (0_u32, 0_f64);
+        let mut epoch_interval = Duration::default();
+        let mut mjd_start = (0_u32, 0_f64);
 
-        let epoch_interval = Duration::default();
-        let sv: Vec<Sv> = Vec::new();
-        let position = PositionClockData::default();
-        let mjd_start = (0_u32, 0_f64);
+        let vehicles: Vec<Sv> = Vec::new();
+        let mut position_data = PositionClockData::default();
         let mut comments = Comments::new();
+
+        let mut current_epoch = Epoch::default();
 
         for line in content.lines() {
             let line = line.trim();
@@ -244,6 +262,10 @@ impl SP3 {
                 break;
             }
             if header_line1(line) {
+                if line.len() != 60 {
+                    return Err(Error::ParsingError(ParsingError::MalformedH1));
+                }
+
                 version = Version::from_str(&line[1..2])?;
                 data_type = DataType::from_str(&line[2..3])?;
 
@@ -275,6 +297,8 @@ impl SP3 {
                 ))
                 .or(Err(ParsingError::Epoch))?;
 
+                current_epoch = start_epoch;
+
                 nb_epochs = u32::from_str(line[31..39].trim())
                     .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
 
@@ -284,14 +308,59 @@ impl SP3 {
 
                 orbit_type = OrbitType::from_str(line[51..55].trim())?;
                 agency = line[55..].trim().to_string();
-                continue;
             }
             if header_line2(line) {
+                if line.len() != 60 {
+                    return Err(Error::ParsingError(ParsingError::MalformedH2));
+                }
+
                 week_counter.0 = u32::from_str(line[2..7].trim())
                     .or(Err(ParsingError::WeekCounter(line[2..7].to_string())))?;
 
-                continue;
+                week_counter.1 = f64::from_str(line[7..23].trim())
+                    .or(Err(ParsingError::WeekCounter(line[7..23].to_string())))?;
+
+                let dt = f64::from_str(line[24..38].trim())
+                    .or(Err(ParsingError::EpochInterval(line[24..38].to_string())))?;
+                epoch_interval = Duration::from_seconds(dt);
+
+                mjd_start.0 = u32::from_str(line[38..44].trim())
+                    .or(Err(ParsingError::Mjd(line[38..44].to_string())))?;
+
+                mjd_start.1 = f64::from_str(line[44..].trim())
+                    .or(Err(ParsingError::Mjd(line[44..].to_string())))?;
             }
+            if position(line) {
+                if line.len() < 60 {
+                    /*
+                     * tolerate malformed positions
+                     */
+                    continue;
+                }
+                let sv = Sv::from_str(line[1..4].trim())
+                    .or(Err(ParsingError::Sv(line[1..4].to_string())))?;
+
+                let pos_x = f64::from_str(line[4..18].trim())
+                    .or(Err(ParsingError::Coordinates(line[4..18].to_string())))?;
+
+                let pos_y = f64::from_str(line[18..32].trim())
+                    .or(Err(ParsingError::Coordinates(line[18..32].to_string())))?;
+
+                let pos_z = f64::from_str(line[32..46].trim())
+                    .or(Err(ParsingError::Coordinates(line[32..46].to_string())))?;
+
+                let clock = f64::from_str(line[46..60].trim())
+                    .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
+
+                if let Some(e) = position_data.get_mut(&current_epoch) {
+                    e.insert(sv, (pos_x, pos_y, pos_z, clock));
+                } else {
+                    let mut map: BTreeMap<Sv, (f64, f64, f64, f64)> = BTreeMap::new();
+                    map.insert(sv, (pos_x, pos_y, pos_z, clock));
+                    position_data.insert(current_epoch, map);
+                }
+            }
+            if new_epoch(line) {}
         }
 
         Ok(Self {
@@ -305,9 +374,16 @@ impl SP3 {
             week_counter,
             epoch_interval,
             mjd_start,
-            sv,
-            position,
+            sv: vehicles,
+            position: position_data,
             comments,
+        })
+    }
+    /// Returns an Iterator for Positions and Clock error estimates
+    pub fn position_clock(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, f64))> + '_ {
+        self.position.iter().flat_map(|(e, sv)| {
+            sv.iter()
+                .map(|(sv, (x, y, z, clock))| (*e, *sv, (*x, *y, *z, *clock)))
         })
     }
 }
