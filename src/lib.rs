@@ -161,9 +161,9 @@ pub struct SP3 {
     pub mjd_start: (u32, f64),
     /// Satellite Vehicles identifier
     pub sv: Vec<Sv>,
-    /// Positions
+    /// Positions expressed in km, with 1mm precision, per Epoch and Sv.
     pub position: PositionRecord,
-    /// Clock estimates
+    /// Clock estimates in microseconds, with 1E-12 precision per Epoch and Sv.
     pub clock: ClockRecord,
     /// Encountered comments, stored as is
     pub comments: Comments,
@@ -355,7 +355,7 @@ impl SP3 {
                     }
                 }
 
-                if !line[46..60].trim().eq("999999.999999") {
+                if !line[46..53].trim().eq("999999.") {
                     /*
                      * Clock data is present & correct
                      */
@@ -397,13 +397,15 @@ impl SP3 {
     pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
         self.sv.iter().copied()
     }
-    /// Returns an Iterator over Sv position estimates
+    /// Returns an Iterator over Sv position estimates, in km
+    /// with 1mm precision.
     pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64))> + '_ {
         self.position
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, pos)| (*e, *sv, *pos)))
     }
-    /// Returns an Iterator over Clock error estimates
+    /// Returns an Iterator over Clock error estimates, in microseconds
+    /// with 1E-12 precision.
     pub fn sv_clock(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
         self.clock
             .iter()
