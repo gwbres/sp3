@@ -220,13 +220,13 @@ impl SP3 {
         let mut nb_epochs = 0;
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
+        let mut agency = String::from("Unknown");
 
         let epoch_interval = Duration::default();
         let sv: Vec<Sv> = Vec::new();
         let position = PositionClockData::default();
         let mjd_start = (0_u32, 0_f64);
         let week_counter = (0_u32, 0_f64);
-        let agency = String::from("Unknown");
         let mut comments = Comments::new(); 
 
         for line in content.lines() {
@@ -274,6 +274,7 @@ impl SP3 {
                 coord_system = line[45..51].trim().to_string();
                 
                 orbit_type = OrbitType::from_str(&line[51..55].trim())?;
+                agency = line[55..].trim().to_string();
             }
         }
         
