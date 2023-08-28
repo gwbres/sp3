@@ -371,7 +371,9 @@ impl SP3 {
                     }
                 }
             }
-            if new_epoch(line) {}
+            if new_epoch(line) {
+                current_epoch = parse_epoch(&line[3..])?;
+            }
         }
 
         Ok(Self {
