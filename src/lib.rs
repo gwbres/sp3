@@ -1,4 +1,4 @@
-//! sp3 precise orbit file data by IGS
+//! SP3 precise orbit file parser.
 
 use hifitime::{Duration, Epoch};
 use rinex::prelude::Sv;
