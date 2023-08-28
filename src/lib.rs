@@ -1,4 +1,4 @@
-//! sp3 precise orbit file data by IGS
+//! SP3 precise orbit file parser.
 
 use hifitime::{Duration, Epoch};
 use rinex::prelude::Sv;
@@ -43,7 +43,7 @@ fn end_of_file(content: &str) -> bool {
     content.eq("EOF")
 }
 
-fn position(content: &str) -> bool {
+fn position_entry(content: &str) -> bool {
     content.starts_with('P')
 }
 
@@ -125,10 +125,17 @@ impl std::str::FromStr for OrbitType {
     }
 }
 
+type Position = (f64, f64, f64);
+
 /*
- * Position + Clock data
+ * Positions
  */
-type PositionClockData = BTreeMap<Epoch, BTreeMap<Sv, (f64, f64, f64, f64)>>;
+type PositionRecord = BTreeMap<Epoch, BTreeMap<Sv, Position>>;
+
+/*
+ * Clock estimates
+ */
+type ClockRecord = BTreeMap<Epoch, BTreeMap<Sv, f64>>;
 
 /*
  * Velocity data
@@ -155,7 +162,9 @@ pub struct SP3 {
     /// Satellite Vehicles identifier
     pub sv: Vec<Sv>,
     /// Positions
-    pub position: PositionClockData,
+    pub position: PositionRecord,
+    /// Clock estimates
+    pub clock: ClockRecord,
     /// Encountered comments, stored as is
     pub comments: Comments,
 }
@@ -210,6 +219,39 @@ pub enum ParsingError {
     Coordinates(String),
 }
 
+/*
+ * Parses hifitime::Epoch from standard format
+ */
+fn parse_epoch(content: &str) -> Result<Epoch, ParsingError> {
+    let y = u32::from_str(content[0..4].trim())
+        .or(Err(ParsingError::EpochYear(content[0..4].to_string())))?;
+
+    let m = u32::from_str(content[4..7].trim())
+        .or(Err(ParsingError::EpochMonth(content[4..7].to_string())))?;
+
+    let d = u32::from_str(content[7..10].trim())
+        .or(Err(ParsingError::EpochDay(content[7..10].to_string())))?;
+
+    let hh = u32::from_str(content[10..13].trim())
+        .or(Err(ParsingError::EpochHours(content[10..13].to_string())))?;
+
+    let mm = u32::from_str(content[13..16].trim())
+        .or(Err(ParsingError::EpochMinutes(content[13..16].to_string())))?;
+
+    let ss = u32::from_str(content[16..19].trim())
+        .or(Err(ParsingError::EpochSeconds(content[16..19].to_string())))?;
+
+    let ss_fract = f64::from_str(content[20..27].trim()).or(Err(
+        ParsingError::EpochMilliSeconds(content[20..27].to_string()),
+    ))?;
+
+    Epoch::from_str(&format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC",
+        y, m, d, hh, mm, ss
+    ))
+    .or(Err(ParsingError::Epoch))
+}
+
 impl SP3 {
     pub fn from_file(fp: &str) -> Result<Self, Errors> {
         let content = std::fs::read_to_string(fp)?;
@@ -226,7 +268,8 @@ impl SP3 {
         let mut mjd_start = (0_u32, 0_f64);
 
         let vehicles: Vec<Sv> = Vec::new();
-        let mut position_data = PositionClockData::default();
+        let mut position = PositionRecord::default();
+        let mut clock = ClockRecord::default();
         let mut comments = Comments::new();
 
         let mut current_epoch = Epoch::default();
@@ -247,34 +290,7 @@ impl SP3 {
 
                 version = Version::from_str(&line[1..2])?;
                 data_type = DataType::from_str(&line[2..3])?;
-
-                let y = u32::from_str(line[3..7].trim())
-                    .or(Err(ParsingError::EpochYear(line[3..7].to_string())))?;
-
-                let m = u32::from_str(line[7..10].trim())
-                    .or(Err(ParsingError::EpochMonth(line[7..10].to_string())))?;
-
-                let d = u32::from_str(line[10..13].trim())
-                    .or(Err(ParsingError::EpochDay(line[10..13].to_string())))?;
-
-                let hh = u32::from_str(line[13..16].trim())
-                    .or(Err(ParsingError::EpochHours(line[13..16].to_string())))?;
-
-                let mm = u32::from_str(line[16..19].trim())
-                    .or(Err(ParsingError::EpochMinutes(line[16..19].to_string())))?;
-
-                let ss = u32::from_str(line[19..22].trim())
-                    .or(Err(ParsingError::EpochSeconds(line[19..22].to_string())))?;
-
-                let ss_fract = f64::from_str(line[23..30].trim()).or(Err(
-                    ParsingError::EpochMilliSeconds(line[23..30].to_string()),
-                ))?;
-
-                start_epoch = Epoch::from_str(&format!(
-                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC",
-                    y, m, d, hh, mm, ss
-                ))
-                .or(Err(ParsingError::Epoch))?;
+                start_epoch = parse_epoch(&line[3..])?;
 
                 current_epoch = start_epoch;
 
@@ -309,7 +325,7 @@ impl SP3 {
                 mjd_start.1 = f64::from_str(line[44..].trim())
                     .or(Err(ParsingError::Mjd(line[44..].to_string())))?;
             }
-            if position(line) {
+            if position_entry(line) {
                 if line.len() < 60 {
                     /*
                      * tolerate malformed positions
@@ -321,25 +337,43 @@ impl SP3 {
 
                 let pos_x = f64::from_str(line[4..18].trim())
                     .or(Err(ParsingError::Coordinates(line[4..18].to_string())))?;
-
                 let pos_y = f64::from_str(line[18..32].trim())
                     .or(Err(ParsingError::Coordinates(line[18..32].to_string())))?;
-
                 let pos_z = f64::from_str(line[32..46].trim())
                     .or(Err(ParsingError::Coordinates(line[32..46].to_string())))?;
 
-                let clock = f64::from_str(line[46..60].trim())
-                    .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
+                if pos_x != 0.0_f64 && pos_y != 0.0_f64 && pos_z != 0.0_f64 {
+                    /*
+                     * Position vector is present & correct
+                     */
+                    if let Some(e) = position.get_mut(&current_epoch) {
+                        e.insert(sv, (pos_x, pos_y, pos_z));
+                    } else {
+                        let mut map: BTreeMap<Sv, Position> = BTreeMap::new();
+                        map.insert(sv, (pos_x, pos_y, pos_z));
+                        position.insert(current_epoch, map);
+                    }
+                }
 
-                if let Some(e) = position_data.get_mut(&current_epoch) {
-                    e.insert(sv, (pos_x, pos_y, pos_z, clock));
-                } else {
-                    let mut map: BTreeMap<Sv, (f64, f64, f64, f64)> = BTreeMap::new();
-                    map.insert(sv, (pos_x, pos_y, pos_z, clock));
-                    position_data.insert(current_epoch, map);
+                if !line[46..60].trim().eq("999999.999999") {
+                    /*
+                     * Clock data is present & correct
+                     */
+                    let clk = f64::from_str(line[46..60].trim())
+                        .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
+
+                    if let Some(e) = clock.get_mut(&current_epoch) {
+                        e.insert(sv, clk);
+                    } else {
+                        let mut map: BTreeMap<Sv, f64> = BTreeMap::new();
+                        map.insert(sv, clk);
+                        clock.insert(current_epoch, map);
+                    }
                 }
             }
-            if new_epoch(line) {}
+            if new_epoch(line) {
+                current_epoch = parse_epoch(&line[3..])?;
+            }
         }
 
         Ok(Self {
@@ -354,7 +388,8 @@ impl SP3 {
             epoch_interval,
             mjd_start,
             sv: vehicles,
-            position: position_data,
+            position,
+            clock,
             comments,
         })
     }
@@ -362,23 +397,16 @@ impl SP3 {
     pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
         self.sv.iter().copied()
     }
-    /// Returns an Iterator for Positions and Clock error estimates
-    pub fn sv_position_clock(
-        &self,
-    ) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, f64))> + '_ {
-        self.position.iter().flat_map(|(e, sv)| {
-            sv.iter()
-                .map(|(sv, (x, y, z, clock))| (*e, *sv, (*x, *y, *z, *clock)))
-        })
-    }
     /// Returns an Iterator over Sv position estimates
     pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64))> + '_ {
-        self.sv_position_clock()
-            .map(|(e, sv, (x, y, z, _))| (e, sv, (x, y, z)))
+        self.position
+            .iter()
+            .flat_map(|(e, sv)| sv.iter().map(|(sv, pos)| (*e, *sv, *pos)))
     }
     /// Returns an Iterator over Clock error estimates
     pub fn sv_clock(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
-        self.sv_position_clock()
-            .map(|(e, sv, (_, _, _, clk))| (e, sv, clk))
+        self.clock
+            .iter()
+            .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
     }
 }
