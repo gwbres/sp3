@@ -1,17 +1,17 @@
 //! sp3 precise orbit file data by IGS
 
+use hifitime::{Duration, Epoch};
 use rinex::prelude::Sv;
-use hifitime::{Epoch, Duration};
 use std::collections::BTreeMap;
 
-use thiserror::Error;
 use std::str::FromStr;
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
 
 pub mod prelude {
-    pub use crate::{SP3, Version, DataType, OrbitType};
+    pub use crate::{DataType, OrbitType, Version, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
 
@@ -55,8 +55,7 @@ fn velocity_error(content: &str) -> bool {
     content.starts_with("EV")
 }
 
-#[derive(Default, Clone, Debug)]
-#[derive(PartialEq, PartialOrd, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Version {
     #[default]
     D,
@@ -81,8 +80,7 @@ impl std::str::FromStr for Version {
     }
 }
 
-#[derive(Default, Clone, Debug)]
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DataType {
     #[default]
     Position,
@@ -107,8 +105,7 @@ impl std::str::FromStr for DataType {
     }
 }
 
-#[derive(Default, Clone, Debug)]
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum OrbitType {
     #[default]
     FIT,
@@ -153,7 +150,7 @@ type PositionClockData = BTreeMap<Epoch, BTreeMap<Sv, (f64, f64, f64, f64)>>;
 /*
  * Velocity data
  */
-type VelocityData =  BTreeMap<Epoch, f64>;
+type VelocityData = BTreeMap<Epoch, f64>;
 
 /*
  * Comments contained in file
@@ -175,15 +172,15 @@ pub struct SP3 {
     /// Satellite Vehicles identifier
     pub sv: Vec<Sv>,
     /// Positions
-    pub position: PositionClockData, 
+    pub position: PositionClockData,
     /// Encountered comments, stored as is
-    pub comments: Comments, 
+    pub comments: Comments,
 }
 
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("failed to read provided file")]
-    DataParsingError(#[from] std::io::Error), 
+    DataParsingError(#[from] std::io::Error),
     #[error("unknown or non supported revision \"{0}\"")]
     UnknownVersion(String),
     #[error("unknown data type \"{0}\"")]
@@ -227,7 +224,7 @@ impl SP3 {
         let position = PositionClockData::default();
         let mjd_start = (0_u32, 0_f64);
         let week_counter = (0_u32, 0_f64);
-        let mut comments = Comments::new(); 
+        let mut comments = Comments::new();
 
         for line in content.lines() {
             let line = line.trim();
@@ -244,27 +241,30 @@ impl SP3 {
 
                 let y = u32::from_str(&line[3..7].trim())
                     .or(Err(Error::EpochYearParsing(line[3..7].to_string())))?;
-                
+
                 let m = u32::from_str(&line[7..10].trim())
                     .or(Err(Error::EpochMonthParsing(line[7..10].to_string())))?;
-                
+
                 let d = u32::from_str(&line[10..13].trim())
                     .or(Err(Error::EpochDayParsing(line[10..13].to_string())))?;
-                
+
                 let hh = u32::from_str(&line[13..16].trim())
                     .or(Err(Error::EpochHoursParsing(line[13..16].to_string())))?;
-                
+
                 let mm = u32::from_str(&line[16..19].trim())
                     .or(Err(Error::EpochMinutesParsing(line[16..19].to_string())))?;
-                
+
                 let ss = u32::from_str(&line[19..22].trim())
                     .or(Err(Error::EpochSecondsParsing(line[19..22].to_string())))?;
-                
-                let ss_fract = f64::from_str(&line[23..30].trim())
-                    .or(Err(Error::EpochMilliSecondsParsing(line[23..30].to_string())))?;
 
-                start_epoch = Epoch::from_str(
-                    &format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC", y, m, d, hh, mm, ss))?;
+                let ss_fract = f64::from_str(&line[23..30].trim()).or(Err(
+                    Error::EpochMilliSecondsParsing(line[23..30].to_string()),
+                ))?;
+
+                start_epoch = Epoch::from_str(&format!(
+                    "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC",
+                    y, m, d, hh, mm, ss
+                ))?;
 
                 nb_epochs = u32::from_str(&line[31..39].trim())
                     .or(Err(Error::NumberEpochParsing(line[31..39].to_string())))?;
@@ -272,12 +272,12 @@ impl SP3 {
                 //= &line[39..45];
 
                 coord_system = line[45..51].trim().to_string();
-                
+
                 orbit_type = OrbitType::from_str(&line[51..55].trim())?;
                 agency = line[55..].trim().to_string();
             }
         }
-        
+
         Ok(Self {
             version,
             data_type,
