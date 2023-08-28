@@ -10,8 +10,12 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
+mod version;
+use version::Version;
+
 pub mod prelude {
-    pub use crate::{DataType, OrbitType, Version, SP3};
+    pub use crate::version::Version;
+    pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
 
@@ -59,31 +63,6 @@ fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
 }
 
-#[derive(Default, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
-pub enum Version {
-    #[default]
-    D,
-}
-
-impl std::fmt::Display for Version {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::D => f.write_str("d"),
-        }
-    }
-}
-
-impl std::str::FromStr for Version {
-    type Err = Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq("d") {
-            Ok(Self::D)
-        } else {
-            Err(Error::UnknownVersion(s.to_string()))
-        }
-    }
-}
-
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum DataType {
     #[default]
@@ -99,12 +78,12 @@ impl std::fmt::Display for DataType {
 }
 
 impl std::str::FromStr for DataType {
-    type Err = Error;
+    type Err = Errors;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("P") {
             Ok(Self::Position)
         } else {
-            Err(Error::UnknownDataType(s.to_string()))
+            Err(Errors::UnknownDataType(s.to_string()))
         }
     }
 }
@@ -130,7 +109,7 @@ impl std::fmt::Display for OrbitType {
 }
 
 impl std::str::FromStr for OrbitType {
-    type Err = Error;
+    type Err = Errors;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("FIT") {
             Ok(Self::FIT)
@@ -141,7 +120,7 @@ impl std::str::FromStr for OrbitType {
         } else if s.eq("HLM") {
             Ok(Self::HLM)
         } else {
-            Err(Error::UnknownOrbitType(s.to_string()))
+            Err(Errors::UnknownOrbitType(s.to_string()))
         }
     }
 }
@@ -182,7 +161,7 @@ pub struct SP3 {
 }
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum Errors {
     #[error("parsing error")]
     ParsingError(#[from] ParsingError),
     #[error("unknown or non supported revision \"{0}\"")]
@@ -232,7 +211,7 @@ pub enum ParsingError {
 }
 
 impl SP3 {
-    pub fn from_file(fp: &str) -> Result<Self, Error> {
+    pub fn from_file(fp: &str) -> Result<Self, Errors> {
         let content = std::fs::read_to_string(fp)?;
 
         let mut version = Version::default();
@@ -263,7 +242,7 @@ impl SP3 {
             }
             if header_line1(line) {
                 if line.len() != 60 {
-                    return Err(Error::ParsingError(ParsingError::MalformedH1));
+                    return Err(Errors::ParsingError(ParsingError::MalformedH1));
                 }
 
                 version = Version::from_str(&line[1..2])?;
@@ -311,7 +290,7 @@ impl SP3 {
             }
             if header_line2(line) {
                 if line.len() != 60 {
-                    return Err(Error::ParsingError(ParsingError::MalformedH2));
+                    return Err(Errors::ParsingError(ParsingError::MalformedH2));
                 }
 
                 week_counter.0 = u32::from_str(line[2..7].trim())
@@ -381,7 +360,7 @@ impl SP3 {
     }
     /// Returns a unique Sv iterator
     pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
-        self.sv.iter().map(|sv| *sv)
+        self.sv.iter().copied()
     }
     /// Returns an Iterator for Positions and Clock error estimates
     pub fn sv_position_clock(

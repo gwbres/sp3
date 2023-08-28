@@ -40,7 +40,7 @@ mod test {
         let position: Vec<_> = sp3.sv_position().collect();
         println!("{:?}", position);
 
-        let clk: Vec<_> = sp3.sv_clock().collect();
+        let mut clk: Vec<_> = sp3.sv_clock().collect();
         println!("{:?}", clk);
 
         /*
