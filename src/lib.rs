@@ -4,6 +4,16 @@ use rinex::prelude::Sv;
 use hifitime::{Epoch, Duration};
 use std::collections::BTreeMap;
 
+use thiserror::Error;
+
+#[cfg(test)]
+mod tests;
+
+pub mod prelude {
+    pub use crate::SP3;
+    pub use hifitime::{Duration, Epoch, TimeScale};
+}
+
 fn header_line1(content: &str) -> bool {
     content.starts_with("#") && !header_line2(content)
 }
@@ -20,7 +30,7 @@ fn orbit_accuracy(content: &str) -> bool {
     content.starts_with("++")
 }
 
-fn comment(content: &str) -> bool {
+fn sp3_comment(content: &str) -> bool {
     content.starts_with("/*")
 }
 
@@ -45,19 +55,19 @@ fn velocity_error(content: &str) -> bool {
 }
 
 #[derive(Default, Clone, Debug)]
-enum Version {
+pub enum Version {
     #[default]
     D,
 }
 
 #[derive(Default, Clone, Debug)]
-enum DataType {
+pub enum DataType {
     #[default]
     Position,
 }
 
 #[derive(Default, Clone, Debug)]
-enum OrbitType {
+pub enum OrbitType {
     #[default]
     FIT,
     EXT,
@@ -75,8 +85,13 @@ type PositionClockData = BTreeMap<Epoch, BTreeMap<Sv, (f64, f64, f64, f64)>>;
  */
 type VelocityData =  BTreeMap<Epoch, f64>;
 
+/*
+ * Comments contained in file
+ */
+type Comments = Vec<String>;
+
 #[derive(Default, Clone, Debug)]
-struct SP3 {
+pub struct SP3 {
     pub version: Version,
     pub data_type: DataType,
     pub start_epoch: Epoch,
@@ -91,10 +106,20 @@ struct SP3 {
     pub sv: Vec<Sv>,
     /// Positions
     pub position: PositionClockData, 
+    /// Encountered comments, stored as is
+    pub comments: Comments, 
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("failed to read provided file")]
+    DataParsingError(#[from] std::io::Error), 
 }
 
 impl SP3 {
-    pub fn from_file() -> Self {
+    pub fn from_file(fp: &str) -> Result<Self, Error> {
+        let content = std::fs::read_to_string(fp)?;
+
         let version = Version::default();
         let data_type = DataType::default();
         let start_epoch = Epoch::default();
@@ -107,8 +132,16 @@ impl SP3 {
         let agency = String::from("Unknown");
         let coord_system = String::from("Unknown");
         let orbit_type = OrbitType::default();
+        let mut comments = Comments::new(); 
+
+        for line in content.lines() {
+            let line = line.trim();
+            if sp3_comment(line) {
+                comments.push(line[3..].to_string());
+            }
+        }
         
-        Self {
+        Ok(Self {
             version,
             data_type,
             start_epoch,
@@ -121,6 +154,7 @@ impl SP3 {
             mjd_start,
             sv,
             position,
-        }
+            comments,
+        })
     }
 }

@@ -23,6 +23,7 @@ rustdoc-args = ["--cfg", "docrs", "--generate-link-to-definition"]
 [dependencies]
 rinex = "0.12"
 hifitime = "3.8.4"
+thiserror = "1"
 
 [dev-dependencies]
 
