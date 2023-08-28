@@ -1,0 +1,28 @@
+[package]
+name = "sp3"
+version = "0.0.1"
+license = "MIT OR Apache-2.0"
+authors = ["Guillaume W. Bres <guillaume.bressaix@gmail.com>"]
+description = "IGS SP3 file parser"
+homepage = "https://github.com/gwbres/sp3"
+repository = "https://github.com/gwbres/sp3"
+keywords = ["rinex", "timing", "gps", "glonass", "galileo"]
+categories = ["science", "science::geo", "parsing"]
+edition = "2021"
+readme = "README.md"
+
+[features]
+default = [] # no features by default
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docrs", "--generate-link-to-definition"]
+
+[build-dependencies]
+
+[dependencies]
+rinex = "0.12"
+hifitime = "3.8.4"
+
+[dev-dependencies]
+
