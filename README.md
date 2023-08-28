@@ -12,6 +12,6 @@ SP3 Precise GNSS Orbit files parser.
 
 SP3 is specifid by [IGS](https://igs.org/products/#orbits_clocks).
 
-The parser only supports Revision D at the moment.
+The parser only supports Revisions C & D at the moment.
 
 This parser is work in progress.
