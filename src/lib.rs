@@ -380,10 +380,22 @@ impl SP3 {
         })
     }
     /// Returns an Iterator for Positions and Clock error estimates
-    pub fn position_clock(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, f64))> + '_ {
+    pub fn sv_position_clock(
+        &self,
+    ) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, f64))> + '_ {
         self.position.iter().flat_map(|(e, sv)| {
             sv.iter()
                 .map(|(sv, (x, y, z, clock))| (*e, *sv, (*x, *y, *z, *clock)))
         })
+    }
+    /// Returns an Iterator over Sv position estimates
+    pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64))> + '_ {
+        self.sv_position_clock()
+            .map(|(e, sv, (x, y, z, _))| (e, sv, (x, y, z)))
+    }
+    /// Returns an Iterator over Clock error estimates
+    pub fn sv_clock(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
+        self.sv_position_clock()
+            .map(|(e, sv, (_, _, _, clk))| (e, sv, clk))
     }
 }

@@ -37,8 +37,11 @@ mod test {
         assert_eq!(sp3.epoch_interval, Duration::from_seconds(300.0_f64));
         assert_eq!(sp3.mjd_start, (58783, 0.0_f64));
 
-        let mut positions: Vec<_> = sp3.position_clock().collect();
-        println!("{:?}", positions);
+        let position: Vec<_> = sp3.sv_position().collect();
+        println!("{:?}", position);
+
+        let clk: Vec<_> = sp3.sv_clock().collect();
+        println!("{:?}", clk);
 
         /*
          * Test file comments
