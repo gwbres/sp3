@@ -11,7 +11,7 @@ use std::str::FromStr;
 mod tests;
 
 pub mod prelude {
-    pub use crate::{SP3, Version, DataType};
+    pub use crate::{SP3, Version, DataType, OrbitType};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
 
@@ -108,6 +108,7 @@ impl std::str::FromStr for DataType {
 }
 
 #[derive(Default, Clone, Debug)]
+#[derive(PartialEq, Eq, Hash)]
 pub enum OrbitType {
     #[default]
     FIT,
@@ -164,7 +165,7 @@ pub struct SP3 {
     pub version: Version,
     pub data_type: DataType,
     pub start_epoch: Epoch,
-    pub nb_epochs: usize,
+    pub nb_epochs: u32,
     pub coord_system: String,
     pub orbit_type: OrbitType,
     pub agency: String,
@@ -203,6 +204,8 @@ pub enum Error {
     EpochSecondsParsing(String),
     #[error("failed to parse epoch milliseconds from \"{0}\"")]
     EpochMilliSecondsParsing(String),
+    #[error("failed to parse number of epochs \"{0}\"")]
+    NumberEpochParsing(String),
     #[error("failed to parse hifitime::Epoch")]
     EpochParsing(#[from] hifitime::Errors),
 }
@@ -214,16 +217,16 @@ impl SP3 {
         let mut version = Version::default();
         let mut data_type = DataType::default();
         let mut start_epoch = Epoch::default();
+        let mut nb_epochs = 0;
+        let mut coord_system = String::from("Unknown");
+        let mut orbit_type = OrbitType::default();
 
         let epoch_interval = Duration::default();
-        let nb_epochs = 0;
         let sv: Vec<Sv> = Vec::new();
         let position = PositionClockData::default();
         let mjd_start = (0_u32, 0_f64);
         let week_counter = (0_u32, 0_f64);
         let agency = String::from("Unknown");
-        let coord_system = String::from("Unknown");
-        let orbit_type = OrbitType::default();
         let mut comments = Comments::new(); 
 
         for line in content.lines() {
@@ -262,6 +265,15 @@ impl SP3 {
 
                 start_epoch = Epoch::from_str(
                     &format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC", y, m, d, hh, mm, ss))?;
+
+                nb_epochs = u32::from_str(&line[31..39].trim())
+                    .or(Err(Error::NumberEpochParsing(line[31..39].to_string())))?;
+
+                //= &line[39..45];
+
+                coord_system = line[45..51].trim().to_string();
+                
+                orbit_type = OrbitType::from_str(&line[51..55].trim())?;
             }
         }
         
