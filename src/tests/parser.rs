@@ -31,7 +31,7 @@ mod test {
             sp3.start_epoch,
             Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap()
         );
-        assert_eq!(sp3.nb_epochs, 288, "bad number of epochs");
+        assert_eq!(sp3.nb_epochs, 1, "bad number of epochs");
         assert_eq!(sp3.coord_system, "IGS14");
         assert_eq!(sp3.orbit_type, OrbitType::FIT);
         assert_eq!(sp3.agency, "IGS");

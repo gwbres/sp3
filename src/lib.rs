@@ -128,7 +128,7 @@ impl std::str::FromStr for OrbitType {
 /*
  * Position + Clock data
  */
-type PositionClockData = BTreeMap<Epoch, BTreeMap<Sv, (f64, f64, f64, f64)>>;
+type PositionClockData = BTreeMap<Epoch, BTreeMap<Sv, (f64, f64, f64, Option<f64>)>>;
 
 /*
  * Velocity data
@@ -328,13 +328,16 @@ impl SP3 {
                 let pos_z = f64::from_str(line[32..46].trim())
                     .or(Err(ParsingError::Coordinates(line[32..46].to_string())))?;
 
-                let clock = f64::from_str(line[46..60].trim())
-                    .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
+                let clock : Option<f64> = None;
+                if !line[46..60].trim().eq("999999.999999") {
+                    let clock = f64::from_str(line[46..60].trim())
+                        .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
+                }
 
                 if let Some(e) = position_data.get_mut(&current_epoch) {
                     e.insert(sv, (pos_x, pos_y, pos_z, clock));
                 } else {
-                    let mut map: BTreeMap<Sv, (f64, f64, f64, f64)> = BTreeMap::new();
+                    let mut map: BTreeMap<Sv, (f64, f64, f64, Option<f64>)> = BTreeMap::new();
                     map.insert(sv, (pos_x, pos_y, pos_z, clock));
                     position_data.insert(current_epoch, map);
                 }
@@ -365,7 +368,7 @@ impl SP3 {
     /// Returns an Iterator for Positions and Clock error estimates
     pub fn sv_position_clock(
         &self,
-    ) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, f64))> + '_ {
+    ) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64, Option<f64>))> + '_ {
         self.position.iter().flat_map(|(e, sv)| {
             sv.iter()
                 .map(|(sv, (x, y, z, clock))| (*e, *sv, (*x, *y, *z, *clock)))
@@ -379,6 +382,12 @@ impl SP3 {
     /// Returns an Iterator over Clock error estimates
     pub fn sv_clock(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
         self.sv_position_clock()
-            .map(|(e, sv, (_, _, _, clk))| (e, sv, clk))
+            .filter_map(|(e, sv, (_, _, _, clk))| { 
+                if let Some(clk) = clk {
+                    Some((e, sv, clk))
+                } else {
+                    None
+                }
+            })
     }
 }
