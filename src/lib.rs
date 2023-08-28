@@ -379,6 +379,11 @@ impl SP3 {
             comments,
         })
     }
+    /// Returns a unique Sv iterator
+    pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
+        self.sv.iter()
+            .map(|sv| *sv)
+    }
     /// Returns an Iterator for Positions and Clock error estimates
     pub fn sv_position_clock(
         &self,
