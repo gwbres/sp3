@@ -16,7 +16,7 @@ pub mod prelude {
 }
 
 fn header_line1(content: &str) -> bool {
-    content.starts_with("#") && !header_line2(content)
+    content.starts_with('#') && !header_line2(content)
 }
 
 fn header_line2(content: &str) -> bool {
@@ -24,7 +24,7 @@ fn header_line2(content: &str) -> bool {
 }
 
 fn sv_identifier(content: &str) -> bool {
-    content.starts_with("+") && !orbit_accuracy(content)
+    content.starts_with('+') && !orbit_accuracy(content)
 }
 
 fn orbit_accuracy(content: &str) -> bool {
@@ -40,7 +40,7 @@ fn end_of_file(content: &str) -> bool {
 }
 
 fn position(content: &str) -> bool {
-    content.starts_with("P")
+    content.starts_with('P')
 }
 
 fn possition_error(content: &str) -> bool {
@@ -48,7 +48,7 @@ fn possition_error(content: &str) -> bool {
 }
 
 fn velocity(content: &str) -> bool {
-    content.starts_with("V")
+    content.starts_with('V')
 }
 
 fn velocity_error(content: &str) -> bool {
@@ -179,32 +179,40 @@ pub struct SP3 {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("failed to read provided file")]
-    DataParsingError(#[from] std::io::Error),
+    #[error("parsing error")]
+    ParsingError(#[from] ParsingError),
     #[error("unknown or non supported revision \"{0}\"")]
     UnknownVersion(String),
     #[error("unknown data type \"{0}\"")]
     UnknownDataType(String),
     #[error("unknown orbit type \"{0}\"")]
     UnknownOrbitType(String),
+    #[error("file i/o error")]
+    DataParsingError(#[from] std::io::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum ParsingError {
     #[error("failed to parse epoch year from \"{0}\"")]
-    EpochYearParsing(String),
+    EpochYear(String),
     #[error("failed to parse epoch month from \"{0}\"")]
-    EpochMonthParsing(String),
+    EpochMonth(String),
     #[error("failed to parse epoch day from \"{0}\"")]
-    EpochDayParsing(String),
+    EpochDay(String),
     #[error("failed to parse epoch hours from \"{0}\"")]
-    EpochHoursParsing(String),
+    EpochHours(String),
     #[error("failed to parse epoch minutes from \"{0}\"")]
-    EpochMinutesParsing(String),
+    EpochMinutes(String),
     #[error("failed to parse epoch seconds from \"{0}\"")]
-    EpochSecondsParsing(String),
+    EpochSeconds(String),
     #[error("failed to parse epoch milliseconds from \"{0}\"")]
-    EpochMilliSecondsParsing(String),
+    EpochMilliSeconds(String),
     #[error("failed to parse number of epochs \"{0}\"")]
-    NumberEpochParsing(String),
+    NumberEpoch(String),
+    #[error("failed to parse week counter")]
+    WeekCounter(String),
     #[error("failed to parse hifitime::Epoch")]
-    EpochParsing(#[from] hifitime::Errors),
+    Epoch,
 }
 
 impl SP3 {
@@ -218,12 +226,12 @@ impl SP3 {
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
         let mut agency = String::from("Unknown");
+        let mut week_counter = (0_u32, 0_f64);
 
         let epoch_interval = Duration::default();
         let sv: Vec<Sv> = Vec::new();
         let position = PositionClockData::default();
         let mjd_start = (0_u32, 0_f64);
-        let week_counter = (0_u32, 0_f64);
         let mut comments = Comments::new();
 
         for line in content.lines() {
@@ -239,42 +247,50 @@ impl SP3 {
                 version = Version::from_str(&line[1..2])?;
                 data_type = DataType::from_str(&line[2..3])?;
 
-                let y = u32::from_str(&line[3..7].trim())
-                    .or(Err(Error::EpochYearParsing(line[3..7].to_string())))?;
+                let y = u32::from_str(line[3..7].trim())
+                    .or(Err(ParsingError::EpochYear(line[3..7].to_string())))?;
 
-                let m = u32::from_str(&line[7..10].trim())
-                    .or(Err(Error::EpochMonthParsing(line[7..10].to_string())))?;
+                let m = u32::from_str(line[7..10].trim())
+                    .or(Err(ParsingError::EpochMonth(line[7..10].to_string())))?;
 
-                let d = u32::from_str(&line[10..13].trim())
-                    .or(Err(Error::EpochDayParsing(line[10..13].to_string())))?;
+                let d = u32::from_str(line[10..13].trim())
+                    .or(Err(ParsingError::EpochDay(line[10..13].to_string())))?;
 
-                let hh = u32::from_str(&line[13..16].trim())
-                    .or(Err(Error::EpochHoursParsing(line[13..16].to_string())))?;
+                let hh = u32::from_str(line[13..16].trim())
+                    .or(Err(ParsingError::EpochHours(line[13..16].to_string())))?;
 
-                let mm = u32::from_str(&line[16..19].trim())
-                    .or(Err(Error::EpochMinutesParsing(line[16..19].to_string())))?;
+                let mm = u32::from_str(line[16..19].trim())
+                    .or(Err(ParsingError::EpochMinutes(line[16..19].to_string())))?;
 
-                let ss = u32::from_str(&line[19..22].trim())
-                    .or(Err(Error::EpochSecondsParsing(line[19..22].to_string())))?;
+                let ss = u32::from_str(line[19..22].trim())
+                    .or(Err(ParsingError::EpochSeconds(line[19..22].to_string())))?;
 
-                let ss_fract = f64::from_str(&line[23..30].trim()).or(Err(
-                    Error::EpochMilliSecondsParsing(line[23..30].to_string()),
+                let ss_fract = f64::from_str(line[23..30].trim()).or(Err(
+                    ParsingError::EpochMilliSeconds(line[23..30].to_string()),
                 ))?;
 
                 start_epoch = Epoch::from_str(&format!(
                     "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC",
                     y, m, d, hh, mm, ss
-                ))?;
+                ))
+                .or(Err(ParsingError::Epoch))?;
 
-                nb_epochs = u32::from_str(&line[31..39].trim())
-                    .or(Err(Error::NumberEpochParsing(line[31..39].to_string())))?;
+                nb_epochs = u32::from_str(line[31..39].trim())
+                    .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
 
                 //= &line[39..45];
 
                 coord_system = line[45..51].trim().to_string();
 
-                orbit_type = OrbitType::from_str(&line[51..55].trim())?;
+                orbit_type = OrbitType::from_str(line[51..55].trim())?;
                 agency = line[55..].trim().to_string();
+                continue;
+            }
+            if header_line2(line) {
+                week_counter.0 = u32::from_str(line[2..7].trim())
+                    .or(Err(ParsingError::WeekCounter(line[2..7].to_string())))?;
+
+                continue;
             }
         }
 
