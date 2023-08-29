@@ -1,5 +1,4 @@
 //! parser dedicated tests
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -8,7 +7,7 @@ mod test {
     use std::path::PathBuf;
     use std::str::FromStr;
     #[test]
-    fn test_sp3_d() {
+    fn sp3d_txt() {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
             .join("data")

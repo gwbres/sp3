@@ -94,6 +94,7 @@ pub enum OrbitType {
     FIT,
     EXT,
     BCT,
+    BHN,
     HLM,
 }
 
@@ -103,6 +104,7 @@ impl std::fmt::Display for OrbitType {
             Self::FIT => f.write_str("FIT"),
             Self::EXT => f.write_str("EXT"),
             Self::BCT => f.write_str("BCT"),
+            Self::BHN => f.write_str("BHN"),
             Self::HLM => f.write_str("HLM"),
         }
     }
@@ -117,6 +119,8 @@ impl std::str::FromStr for OrbitType {
             Ok(Self::EXT)
         } else if s.eq("BCT") {
             Ok(Self::BCT)
+        } else if s.eq("BHN") {
+            Ok(Self::BHN)
         } else if s.eq("HLM") {
             Ok(Self::HLM)
         } else {
