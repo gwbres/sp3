@@ -1,8 +1,8 @@
 //! SP3 precise orbit file parser.
 
-use hifitime::{Duration, Epoch};
-use itertools::Itertools;
-use rinex::prelude::Sv;
+use hifitime::{Duration, Epoch, TimeScale};
+//use itertools::Itertools;
+use rinex::prelude::{Constellation, Sv};
 use std::collections::BTreeMap;
 
 use std::str::FromStr;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod prelude {
     pub use crate::version::Version;
+    //pub use rinex::{Sv, Constellation};
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
@@ -37,6 +38,10 @@ fn sv_identifier(content: &str) -> bool {
 
 fn orbit_accuracy(content: &str) -> bool {
     content.starts_with("++")
+}
+
+fn file_descriptor(content: &str) -> bool {
+    content.starts_with("%c")
 }
 
 fn sp3_comment(content: &str) -> bool {
@@ -160,15 +165,26 @@ type Comments = Vec<String>;
 #[derive(Default, Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SP3 {
+    /// File revision
     pub version: Version,
     pub data_type: DataType,
     pub coord_system: String,
     pub orbit_type: OrbitType,
+    /// Agency providing this data
     pub agency: String,
+    /// Type of constellations encountered in this file.
+    /// For example "GPS" means only GPS vehicles are present.
+    pub constellation: Constellation,
+    /// File original time system,
+    /// either UTC or time source from which we converted to UTC.
+    pub time_system: TimeScale,
+    /// Initial week counter, in time_system
     pub week_counter: (u32, f64),
+    /// Initial MJD, in time_system
     pub mjd_start: (u32, f64),
     /// [`Epoch`]s where at least one position
-    /// or one clock data is provided
+    /// or one clock data is provided. Epochs are expressed UTC time,
+    /// either directly if provided as such, or internally converted.
     pub epoch: Vec<Epoch>,
     /// Returns sampling interval, ie., time between successive [`Epoch`]s.
     pub epoch_interval: Duration,
@@ -186,6 +202,10 @@ pub struct SP3 {
 pub enum Errors {
     #[error("parsing error")]
     ParsingError(#[from] ParsingError),
+    #[error("hifitime parsing error")]
+    HifitimeParsingError(#[from] hifitime::Errors),
+    #[error("constellation parsing error")]
+    ConstellationParsingError(#[from] rinex::constellation::Error),
     #[error("unknown or non supported revision \"{0}\"")]
     UnknownVersion(String),
     #[error("unknown data type \"{0}\"")]
@@ -202,6 +222,8 @@ pub enum ParsingError {
     MalformedH1,
     #[error("malformed header line #2")]
     MalformedH2,
+    #[error("malformed %c line \"{0}\"")]
+    MalformedDescriptor(String),
     #[error("failed to parse epoch year from \"{0}\"")]
     EpochYear(String),
     #[error("failed to parse epoch month from \"{0}\"")]
@@ -235,7 +257,7 @@ pub enum ParsingError {
 /*
  * Parses hifitime::Epoch from standard format
  */
-fn parse_epoch(content: &str) -> Result<Epoch, ParsingError> {
+fn parse_epoch(content: &str, time_scale: TimeScale) -> Result<Epoch, ParsingError> {
     let y = u32::from_str(content[0..4].trim())
         .or(Err(ParsingError::EpochYear(content[0..4].to_string())))?;
 
@@ -259,8 +281,8 @@ fn parse_epoch(content: &str) -> Result<Epoch, ParsingError> {
     ))?;
 
     Epoch::from_str(&format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} UTC",
-        y, m, d, hh, mm, ss
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02} {}",
+        y, m, d, hh, mm, ss, time_scale,
     ))
     .or(Err(ParsingError::Epoch))
 }
@@ -272,8 +294,12 @@ impl SP3 {
         let mut version = Version::default();
         let mut data_type = DataType::default();
 
-        let mut start_epoch = Epoch::default();
-        let mut nb_epochs = 0;
+        let mut pc_count = 0_u8;
+        let mut time_system = TimeScale::default();
+        let mut constellation = Constellation::default();
+
+        //let mut start_epoch = Epoch::default();
+        //let mut nb_epochs = 0;
 
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
@@ -306,10 +332,11 @@ impl SP3 {
 
                 version = Version::from_str(&line[1..2])?;
                 data_type = DataType::from_str(&line[2..3])?;
-                start_epoch = parse_epoch(&line[3..])?;
 
-                nb_epochs = u32::from_str(line[31..39].trim())
-                    .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
+                //start_epoch = parse_epoch(&line[3..], TimeScale::UTC)?;
+
+                //nb_epochs = u32::from_str(line[31..39].trim())
+                //    .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
 
                 //= &line[39..45];
 
@@ -338,6 +365,20 @@ impl SP3 {
 
                 mjd_start.1 = f64::from_str(line[44..].trim())
                     .or(Err(ParsingError::Mjd(line[44..].to_string())))?;
+            }
+            if file_descriptor(line) {
+                if line.len() < 60 {
+                    return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
+                        line.to_string(),
+                    )));
+                }
+
+                if pc_count == 0 {
+                    constellation = Constellation::from_str(line[3..4].trim())?;
+                    time_system = TimeScale::from_str(line[9..12].trim())?;
+                }
+
+                pc_count += 1;
             }
             if position_entry(line) {
                 if line.len() < 60 {
@@ -386,7 +427,7 @@ impl SP3 {
                 }
             }
             if new_epoch(line) {
-                epoch = parse_epoch(&line[3..])?;
+                epoch = parse_epoch(&line[3..], time_system)?;
                 epochs.push(epoch);
             }
         }
@@ -395,6 +436,8 @@ impl SP3 {
             version,
             data_type,
             epoch: epochs,
+            time_system,
+            constellation,
             coord_system,
             orbit_type,
             agency,
@@ -411,6 +454,11 @@ impl SP3 {
     /// Position or Clock data is provided.
     pub fn epoch(&self) -> impl Iterator<Item = Epoch> + '_ {
         self.epoch.iter().copied()
+    }
+    /// Returns a Unique Epoch Iterator, expressed in UTC,
+    /// ie., with leap seconds take into account. Useful when processing Self.
+    pub fn epoch_utc(&self) -> impl Iterator<Item = Epoch> + '_ {
+        self.epoch().map(|e| e.in_time_scale(TimeScale::UTC))
     }
     /// Returns total number of epoch
     pub fn nb_epochs(&self) -> usize {
