@@ -1,4 +1,4 @@
-//! parser dedicated tests
+//! SP3-D dedicated tests
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
@@ -27,10 +27,10 @@ mod test {
         assert_eq!(sp3.version, Version::D);
         assert_eq!(sp3.data_type, DataType::Position);
         assert_eq!(
-            sp3.start_epoch,
-            Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap()
+            sp3.first_epoch(),
+            Some(Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap())
         );
-        assert_eq!(sp3.nb_epochs, 1, "bad number of epochs");
+        assert_eq!(sp3.nb_epochs(), 1, "bad number of epochs");
         assert_eq!(sp3.coord_system, "IGS14");
         assert_eq!(sp3.orbit_type, OrbitType::FIT);
         assert_eq!(sp3.agency, "IGS");

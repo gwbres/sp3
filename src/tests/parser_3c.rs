@@ -1,0 +1,85 @@
+//! SP3-C dedicated tests
+#[cfg(test)]
+mod test {
+    use crate::prelude::*;
+    use rinex::prelude::Sv;
+    use rinex::sv;
+    use std::path::PathBuf;
+    use std::str::FromStr;
+    #[test]
+    fn ESA0OPSRAP_20232390000_01D_15M_ORB() {
+        let path = PathBuf::new()
+            .join(env!("CARGO_MANIFEST_DIR"))
+            .join("data")
+            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3");
+
+        let sp3 = SP3::from_file(&path.to_string_lossy());
+        assert!(
+            sp3.is_ok(),
+            "failed to parse data/sp3d.txt: {:?}",
+            sp3.err()
+        );
+
+        let sp3 = sp3.unwrap();
+
+        /*
+         * Test general infos
+         */
+        assert_eq!(sp3.version, Version::C);
+        assert_eq!(sp3.data_type, DataType::Position);
+
+        assert_eq!(
+            sp3.first_epoch(),
+            Some(Epoch::from_str("2023-08-27T00:00:00 UTC").unwrap())
+        );
+
+        assert_eq!(sp3.nb_epochs(), 96, "bad number of epochs");
+        assert_eq!(sp3.coord_system, "ITRF2");
+        assert_eq!(sp3.orbit_type, OrbitType::BHN);
+        assert_eq!(sp3.agency, "ESOC");
+
+        assert_eq!(sp3.week_counter, (2277, 0.0_f64));
+        assert_eq!(sp3.epoch_interval, Duration::from_seconds(900.0_f64));
+        assert_eq!(sp3.mjd_start, (60183, 0.0_f64));
+
+        for (index, epoch) in sp3.epoch().enumerate() {
+            match index {
+                0 => {
+                    assert_eq!(
+                        epoch,
+                        Epoch::from_str("2023-08-27T00:00:00").unwrap(),
+                        "parsed wrong epoch"
+                    );
+                },
+                1 => {
+                    assert_eq!(
+                        epoch,
+                        Epoch::from_str("2023-08-27T00:15:00").unwrap(),
+                        "parsed wrong epoch"
+                    );
+                },
+                _ => {},
+            }
+        }
+
+        for (index, (epoch, sv, clock)) in sp3.sv_clock().enumerate() {}
+
+        /*
+         * Test file comments
+         */
+        assert_eq!(
+            sp3.comments.len(),
+            4,
+            "failed to parse files comment correctly"
+        );
+        assert_eq!(
+            sp3.comments,
+            vec![
+                "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+                "PCV:IGS20_2274 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
+            ],
+        );
+    }
+}

@@ -1,6 +1,7 @@
 //! SP3 precise orbit file parser.
 
 use hifitime::{Duration, Epoch};
+use itertools::Itertools;
 use rinex::prelude::Sv;
 use std::collections::BTreeMap;
 
@@ -161,15 +162,17 @@ type Comments = Vec<String>;
 pub struct SP3 {
     pub version: Version,
     pub data_type: DataType,
-    pub start_epoch: Epoch,
-    pub nb_epochs: u32,
     pub coord_system: String,
     pub orbit_type: OrbitType,
     pub agency: String,
     pub week_counter: (u32, f64),
-    pub epoch_interval: Duration,
     pub mjd_start: (u32, f64),
-    /// Satellite Vehicles identifier
+    /// [`Epoch`]s where at least one position
+    /// or one clock data is provided
+    pub epoch: Vec<Epoch>,
+    /// Returns sampling interval, ie., time between successive [`Epoch`]s.
+    pub epoch_interval: Duration,
+    /// Satellite Vehicles
     pub sv: Vec<Sv>,
     /// Positions expressed in km, with 1mm precision, per Epoch and Sv.
     pub position: PositionRecord,
@@ -268,8 +271,10 @@ impl SP3 {
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
+
         let mut start_epoch = Epoch::default();
         let mut nb_epochs = 0;
+
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
         let mut agency = String::from("Unknown");
@@ -282,7 +287,8 @@ impl SP3 {
         let mut clock = ClockRecord::default();
         let mut comments = Comments::new();
 
-        let mut current_epoch = Epoch::default();
+        let mut epoch = Epoch::default();
+        let mut epochs: Vec<Epoch> = Vec::new();
 
         for line in content.lines() {
             let line = line.trim();
@@ -301,8 +307,6 @@ impl SP3 {
                 version = Version::from_str(&line[1..2])?;
                 data_type = DataType::from_str(&line[2..3])?;
                 start_epoch = parse_epoch(&line[3..])?;
-
-                current_epoch = start_epoch;
 
                 nb_epochs = u32::from_str(line[31..39].trim())
                     .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
@@ -356,12 +360,12 @@ impl SP3 {
                     /*
                      * Position vector is present & correct
                      */
-                    if let Some(e) = position.get_mut(&current_epoch) {
+                    if let Some(e) = position.get_mut(&epoch) {
                         e.insert(sv, (pos_x, pos_y, pos_z));
                     } else {
                         let mut map: BTreeMap<Sv, Position> = BTreeMap::new();
                         map.insert(sv, (pos_x, pos_y, pos_z));
-                        position.insert(current_epoch, map);
+                        position.insert(epoch, map);
                     }
                 }
 
@@ -372,25 +376,25 @@ impl SP3 {
                     let clk = f64::from_str(line[46..60].trim())
                         .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
 
-                    if let Some(e) = clock.get_mut(&current_epoch) {
+                    if let Some(e) = clock.get_mut(&epoch) {
                         e.insert(sv, clk);
                     } else {
                         let mut map: BTreeMap<Sv, f64> = BTreeMap::new();
                         map.insert(sv, clk);
-                        clock.insert(current_epoch, map);
+                        clock.insert(epoch, map);
                     }
                 }
             }
             if new_epoch(line) {
-                current_epoch = parse_epoch(&line[3..])?;
+                epoch = parse_epoch(&line[3..])?;
+                epochs.push(epoch);
             }
         }
 
         Ok(Self {
             version,
             data_type,
-            start_epoch,
-            nb_epochs,
+            epoch: epochs,
             coord_system,
             orbit_type,
             agency,
@@ -402,6 +406,23 @@ impl SP3 {
             clock,
             comments,
         })
+    }
+    /// Returns a unique Epoch iterator where either
+    /// Position or Clock data is provided.
+    pub fn epoch(&self) -> impl Iterator<Item = Epoch> + '_ {
+        self.epoch.iter().copied()
+    }
+    /// Returns total number of epoch
+    pub fn nb_epochs(&self) -> usize {
+        self.epoch.len()
+    }
+    /// Returns first epoch
+    pub fn first_epoch(&self) -> Option<Epoch> {
+        self.epoch.get(0).copied()
+    }
+    /// Returns last epoch
+    pub fn last_epoch(&self) -> Option<Epoch> {
+        self.epoch.last().copied()
     }
     /// Returns a unique Sv iterator
     pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
