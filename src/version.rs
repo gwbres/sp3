@@ -1,6 +1,6 @@
 //! sp3 version
 
-use crate::Errors;
+use crate::ParsingError;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ impl std::fmt::Display for Version {
 }
 
 impl std::str::FromStr for Version {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("a") {
             Ok(Self::A)
@@ -38,7 +38,7 @@ impl std::str::FromStr for Version {
         } else if s.eq("d") {
             Ok(Self::D)
         } else {
-            Err(Errors::UnknownVersion(s.to_string()))
+            Err(ParsingError::UnknownVersion(s.to_string()))
         }
     }
 }

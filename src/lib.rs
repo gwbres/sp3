@@ -11,7 +11,13 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
+mod header;
 mod version;
+
+use header::{
+    line1::{is_header_line1, Line1},
+    line2::{is_header_line2, Line2},
+};
 use version::Version;
 
 #[cfg(feature = "serde")]
@@ -22,14 +28,6 @@ pub mod prelude {
     //pub use rinex::{Sv, Constellation};
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
-}
-
-fn header_line1(content: &str) -> bool {
-    content.starts_with('#') && !header_line2(content)
-}
-
-fn header_line2(content: &str) -> bool {
-    content.starts_with("##")
 }
 
 fn sv_identifier(content: &str) -> bool {
@@ -88,12 +86,12 @@ impl std::fmt::Display for DataType {
 }
 
 impl std::str::FromStr for DataType {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("P") {
             Ok(Self::Position)
         } else {
-            Err(Errors::UnknownDataType(s.to_string()))
+            Err(ParsingError::UnknownDataType(s.to_string()))
         }
     }
 }
@@ -122,7 +120,7 @@ impl std::fmt::Display for OrbitType {
 }
 
 impl std::str::FromStr for OrbitType {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("FIT") {
             Ok(Self::FIT)
@@ -135,7 +133,7 @@ impl std::str::FromStr for OrbitType {
         } else if s.eq("HLM") {
             Ok(Self::HLM)
         } else {
-            Err(Errors::UnknownOrbitType(s.to_string()))
+            Err(ParsingError::UnknownOrbitType(s.to_string()))
         }
     }
 }
@@ -206,18 +204,18 @@ pub enum Errors {
     HifitimeParsingError(#[from] hifitime::Errors),
     #[error("constellation parsing error")]
     ConstellationParsingError(#[from] rinex::constellation::Error),
-    #[error("unknown or non supported revision \"{0}\"")]
-    UnknownVersion(String),
-    #[error("unknown data type \"{0}\"")]
-    UnknownDataType(String),
-    #[error("unknown orbit type \"{0}\"")]
-    UnknownOrbitType(String),
     #[error("file i/o error")]
     DataParsingError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum ParsingError {
+    #[error("unknown or non supported revision \"{0}\"")]
+    UnknownVersion(String),
+    #[error("unknown data type \"{0}\"")]
+    UnknownDataType(String),
+    #[error("unknown orbit type \"{0}\"")]
+    UnknownOrbitType(String),
     #[error("malformed header line #1")]
     MalformedH1,
     #[error("malformed header line #2")]
@@ -325,46 +323,13 @@ impl SP3 {
             if end_of_file(line) {
                 break;
             }
-            if header_line1(line) {
-                if line.len() != 60 {
-                    return Err(Errors::ParsingError(ParsingError::MalformedH1));
-                }
-
-                version = Version::from_str(&line[1..2])?;
-                data_type = DataType::from_str(&line[2..3])?;
-
-                //start_epoch = parse_epoch(&line[3..], TimeScale::UTC)?;
-
-                //nb_epochs = u32::from_str(line[31..39].trim())
-                //    .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
-
-                //= &line[39..45];
-
-                coord_system = line[45..51].trim().to_string();
-
-                orbit_type = OrbitType::from_str(line[51..55].trim())?;
-                agency = line[55..].trim().to_string();
+            if is_header_line1(line) && !is_header_line2(line) {
+                let l1 = Line1::from_str(line)?;
+                (version, data_type, coord_system, orbit_type, agency) = l1.to_parts();
             }
-            if header_line2(line) {
-                if line.len() != 60 {
-                    return Err(Errors::ParsingError(ParsingError::MalformedH2));
-                }
-
-                week_counter.0 = u32::from_str(line[2..7].trim())
-                    .or(Err(ParsingError::WeekCounter(line[2..7].to_string())))?;
-
-                week_counter.1 = f64::from_str(line[7..23].trim())
-                    .or(Err(ParsingError::WeekCounter(line[7..23].to_string())))?;
-
-                let dt = f64::from_str(line[24..38].trim())
-                    .or(Err(ParsingError::EpochInterval(line[24..38].to_string())))?;
-                epoch_interval = Duration::from_seconds(dt);
-
-                mjd_start.0 = u32::from_str(line[38..44].trim())
-                    .or(Err(ParsingError::Mjd(line[38..44].to_string())))?;
-
-                mjd_start.1 = f64::from_str(line[44..].trim())
-                    .or(Err(ParsingError::Mjd(line[44..].to_string())))?;
+            if is_header_line2(line) {
+                let l2 = Line2::from_str(line)?;
+                (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
             if file_descriptor(line) {
                 if line.len() < 60 {
