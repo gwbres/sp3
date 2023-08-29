@@ -13,6 +13,9 @@ mod tests;
 mod version;
 use version::Version;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 pub mod prelude {
     pub use crate::version::Version;
     pub use crate::{DataType, OrbitType, SP3};
@@ -63,7 +66,8 @@ fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DataType {
     #[default]
     Position,
@@ -88,12 +92,14 @@ impl std::str::FromStr for DataType {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OrbitType {
     #[default]
     FIT,
     EXT,
     BCT,
+    BHN,
     HLM,
 }
 
@@ -103,6 +109,7 @@ impl std::fmt::Display for OrbitType {
             Self::FIT => f.write_str("FIT"),
             Self::EXT => f.write_str("EXT"),
             Self::BCT => f.write_str("BCT"),
+            Self::BHN => f.write_str("BHN"),
             Self::HLM => f.write_str("HLM"),
         }
     }
@@ -117,6 +124,8 @@ impl std::str::FromStr for OrbitType {
             Ok(Self::EXT)
         } else if s.eq("BCT") {
             Ok(Self::BCT)
+        } else if s.eq("BHN") {
+            Ok(Self::BHN)
         } else if s.eq("HLM") {
             Ok(Self::HLM)
         } else {
@@ -148,6 +157,7 @@ type VelocityData = BTreeMap<Epoch, f64>;
 type Comments = Vec<String>;
 
 #[derive(Default, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SP3 {
     pub version: Version,
     pub data_type: DataType,
@@ -161,9 +171,9 @@ pub struct SP3 {
     pub mjd_start: (u32, f64),
     /// Satellite Vehicles identifier
     pub sv: Vec<Sv>,
-    /// Positions
+    /// Positions expressed in km, with 1mm precision, per Epoch and Sv.
     pub position: PositionRecord,
-    /// Clock estimates
+    /// Clock estimates in microseconds, with 1E-12 precision per Epoch and Sv.
     pub clock: ClockRecord,
     /// Encountered comments, stored as is
     pub comments: Comments,
@@ -355,7 +365,7 @@ impl SP3 {
                     }
                 }
 
-                if !line[46..60].trim().eq("999999.999999") {
+                if !line[46..53].trim().eq("999999.") {
                     /*
                      * Clock data is present & correct
                      */
@@ -397,13 +407,15 @@ impl SP3 {
     pub fn sv(&self) -> impl Iterator<Item = Sv> + '_ {
         self.sv.iter().copied()
     }
-    /// Returns an Iterator over Sv position estimates
+    /// Returns an Iterator over Sv position estimates, in km
+    /// with 1mm precision.
     pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64))> + '_ {
         self.position
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, pos)| (*e, *sv, *pos)))
     }
-    /// Returns an Iterator over Clock error estimates
+    /// Returns an Iterator over Clock error estimates, in microseconds
+    /// with 1E-12 precision.
     pub fn sv_clock(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
         self.clock
             .iter()

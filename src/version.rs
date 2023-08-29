@@ -2,8 +2,14 @@
 
 use crate::Errors;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Default, Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Version {
+    A,
+    B,
     C,
     #[default]
     D,
@@ -12,6 +18,8 @@ pub enum Version {
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::A => f.write_str("a"),
+            Self::B => f.write_str("b"),
             Self::C => f.write_str("c"),
             Self::D => f.write_str("d"),
         }
@@ -21,10 +29,14 @@ impl std::fmt::Display for Version {
 impl std::str::FromStr for Version {
     type Err = Errors;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.eq("d") {
-            Ok(Self::D)
+        if s.eq("a") {
+            Ok(Self::A)
+        } else if s.eq("b") {
+            Ok(Self::B)
         } else if s.eq("c") {
             Ok(Self::C)
+        } else if s.eq("d") {
+            Ok(Self::D)
         } else {
             Err(Errors::UnknownVersion(s.to_string()))
         }
@@ -34,8 +46,10 @@ impl std::str::FromStr for Version {
 impl From<Version> for u8 {
     fn from(val: Version) -> Self {
         match val {
-            Version::D => 4,
+            Version::A => 1,
+            Version::B => 2,
             Version::C => 3,
+            Version::D => 4,
         }
     }
 }
