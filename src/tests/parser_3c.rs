@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use rinex::prelude::Sv;
+    use rinex::prelude::{Constellation, Sv};
     use rinex::sv;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -30,12 +30,14 @@ mod test {
 
         assert_eq!(
             sp3.first_epoch(),
-            Some(Epoch::from_str("2023-08-27T00:00:00 UTC").unwrap())
+            Some(Epoch::from_str("2023-08-27T00:00:00 GPST").unwrap())
         );
 
         assert_eq!(sp3.nb_epochs(), 96, "bad number of epochs");
         assert_eq!(sp3.coord_system, "ITRF2");
         assert_eq!(sp3.orbit_type, OrbitType::BHN);
+        assert_eq!(sp3.time_system, TimeScale::GPST);
+        assert_eq!(sp3.constellation, Constellation::Mixed);
         assert_eq!(sp3.agency, "ESOC");
 
         assert_eq!(sp3.week_counter, (2277, 0.0_f64));
@@ -47,14 +49,14 @@ mod test {
                 0 => {
                     assert_eq!(
                         epoch,
-                        Epoch::from_str("2023-08-27T00:00:00").unwrap(),
+                        Epoch::from_str("2023-08-27T00:00:00 GPST").unwrap(),
                         "parsed wrong epoch"
                     );
                 },
                 1 => {
                     assert_eq!(
                         epoch,
-                        Epoch::from_str("2023-08-27T00:15:00").unwrap(),
+                        Epoch::from_str("2023-08-27T00:15:00 GPST").unwrap(),
                         "parsed wrong epoch"
                     );
                 },

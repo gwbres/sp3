@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use rinex::prelude::Sv;
+    use rinex::prelude::{Constellation, Sv};
     use rinex::sv;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -28,18 +28,20 @@ mod test {
         assert_eq!(sp3.data_type, DataType::Position);
         assert_eq!(
             sp3.first_epoch(),
-            Some(Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap())
+            Some(Epoch::from_str("2019-10-27T00:00:00 GPST").unwrap())
         );
         assert_eq!(sp3.nb_epochs(), 1, "bad number of epochs");
         assert_eq!(sp3.coord_system, "IGS14");
         assert_eq!(sp3.orbit_type, OrbitType::FIT);
+        assert_eq!(sp3.time_system, TimeScale::GPST);
+        assert_eq!(sp3.constellation, Constellation::Mixed);
         assert_eq!(sp3.agency, "IGS");
         assert_eq!(sp3.week_counter, (2077, 0.0_f64));
         assert_eq!(sp3.epoch_interval, Duration::from_seconds(300.0_f64));
         assert_eq!(sp3.mjd_start, (58783, 0.0_f64));
 
         for (epoch, sv, position) in sp3.sv_position() {
-            assert_eq!(epoch, Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap());
+            assert_eq!(epoch, Epoch::from_str("2019-10-27T00:00:00 GPST").unwrap());
             if sv == sv!("C01") {
                 assert_eq!(
                     position,
@@ -77,7 +79,7 @@ mod test {
 
         let mut clk: Vec<_> = sp3.sv_clock().collect();
         for (epoch, sv, clock) in sp3.sv_clock() {
-            assert_eq!(epoch, Epoch::from_str("2019-10-27T00:00:00 UTC").unwrap());
+            assert_eq!(epoch, Epoch::from_str("2019-10-27T00:00:00 GPST").unwrap());
             if sv == sv!("C01") {
                 assert_eq!(clock, 63.035497, "bad clock data");
             } else if sv == sv!("E01") {
