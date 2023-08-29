@@ -13,6 +13,9 @@ mod tests;
 mod version;
 use version::Version;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 pub mod prelude {
     pub use crate::version::Version;
     pub use crate::{DataType, OrbitType, SP3};
@@ -63,7 +66,8 @@ fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DataType {
     #[default]
     Position,
@@ -88,7 +92,8 @@ impl std::str::FromStr for DataType {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum OrbitType {
     #[default]
     FIT,
@@ -152,6 +157,7 @@ type VelocityData = BTreeMap<Epoch, f64>;
 type Comments = Vec<String>;
 
 #[derive(Default, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SP3 {
     pub version: Version,
     pub data_type: DataType,
