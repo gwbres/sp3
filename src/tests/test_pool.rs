@@ -7,10 +7,8 @@ mod test {
     use std::str::FromStr;
     #[test]
     fn data_folder() {
-        let prefix = PathBuf::new()
-            .join(env!("CARGO_MANIFEST_DIR"))
-            .join("data");
-        
+        let prefix = PathBuf::new().join(env!("CARGO_MANIFEST_DIR")).join("data");
+
         for file in vec![
             "EMR0OPSULT_20232391800_02D_15M_ORB.SP3.c",
             "COD0MGXFIN_20230500000_01D_05M_ORB.SP3",
@@ -21,11 +19,14 @@ mod test {
             //"sio06492.sp3",
             "sp3d.txt",
         ] {
-            let file_path = prefix
-                .clone()
-                .join(file);
+            let file_path = prefix.clone().join(file);
             let sp3 = SP3::from_file(&file_path.to_string_lossy());
-            assert!(sp3.is_ok(), "failed to parse data/{}, error: {:?}", file, sp3.err());
-        }   
+            assert!(
+                sp3.is_ok(),
+                "failed to parse data/{}, error: {:?}",
+                file,
+                sp3.err()
+            );
+        }
     }
 }
