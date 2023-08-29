@@ -1,9 +1,9 @@
 //! SP3 precise orbit file parser.
 
 use hifitime::{Duration, Epoch};
+use itertools::Itertools;
 use rinex::prelude::Sv;
 use std::collections::BTreeMap;
-use itertools::Itertools;
 
 use std::str::FromStr;
 use thiserror::Error;
@@ -271,7 +271,7 @@ impl SP3 {
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
-        
+
         let mut start_epoch = Epoch::default();
         let mut nb_epochs = 0;
 

@@ -45,20 +45,25 @@ mod test {
         for (index, epoch) in sp3.epoch().enumerate() {
             match index {
                 0 => {
-                    assert_eq!(epoch, Epoch::from_str("2023-08-27T00:00:00").unwrap(),
-                    "parsed wrong epoch");
+                    assert_eq!(
+                        epoch,
+                        Epoch::from_str("2023-08-27T00:00:00").unwrap(),
+                        "parsed wrong epoch"
+                    );
                 },
                 1 => {
-                    assert_eq!(epoch, Epoch::from_str("2023-08-27T00:15:00").unwrap(),
-                    "parsed wrong epoch");
+                    assert_eq!(
+                        epoch,
+                        Epoch::from_str("2023-08-27T00:15:00").unwrap(),
+                        "parsed wrong epoch"
+                    );
                 },
                 _ => {},
             }
         }
 
-        for (index, (epoch, sv, clock)) in sp3.sv_clock().enumerate() {
-        }
-        
+        for (index, (epoch, sv, clock)) in sp3.sv_clock().enumerate() {}
+
         /*
          * Test file comments
          */
