@@ -458,8 +458,7 @@ impl SP3 {
     /// Returns a Unique Epoch Iterator, expressed in UTC,
     /// ie., with leap seconds take into account. Useful when processing Self.
     pub fn epoch_utc(&self) -> impl Iterator<Item = Epoch> + '_ {
-        self.epoch()
-            .map(|e| e.in_time_scale(TimeScale::UTC))
+        self.epoch().map(|e| e.in_time_scale(TimeScale::UTC))
     }
     /// Returns total number of epoch
     pub fn nb_epochs(&self) -> usize {
