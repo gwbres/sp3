@@ -514,6 +514,85 @@ impl Merge for SP3 {
         Ok(s)
     }
     fn merge_mut(&mut self, rhs: &Self) -> Result<(), MergeError> {
+        if self.agency != rhs.agency {
+            return Err(MergeError::DataProvider);
+        }
+        if self.time_system != rhs.time_system {
+            return Err(MergeError::TimeScale);
+        }
+        if self.coord_system != rhs.coord_system {
+            return Err(MergeError::CoordSystem);
+        }
+        if self.constellation != rhs.constellation {
+            /*
+             * Convert self to Mixed constellation
+             */
+            self.constellation = Constellation::Mixed;
+        }
+        // adjust revision
+        if rhs.version > self.version {
+            self.version = rhs.version;
+        }
+        // Adjust MJD start
+        if rhs.mjd_start.0 < self.mjd_start.0 {
+            self.mjd_start.0 = rhs.mjd_start.0;
+        }
+        if rhs.mjd_start.1 < self.mjd_start.1 {
+            self.mjd_start.1 = rhs.mjd_start.1;
+        }
+        // Adjust week counter
+        if rhs.week_counter.0 < self.week_counter.0 {
+            self.week_counter.0 = rhs.week_counter.0;
+        }
+        if rhs.week_counter.1 < self.week_counter.1 {
+            self.week_counter.1 = rhs.week_counter.1;
+        }
+        // update Sv table
+        for sv in &rhs.sv {
+            if !self.sv.contains(sv) {
+                self.sv.push(*sv);
+            }
+        }
+        // update sampling interval (pessimistic)
+        self.epoch_interval = std::cmp::max(self.epoch_interval, rhs.epoch_interval);
+
+        for (epoch, svnn) in &rhs.position {
+            if let Some(lhs_sv) = self.position.get_mut(epoch) {
+                for (sv, position) in svnn {
+                    lhs_sv.insert(*sv, *position);
+                }
+            } else {
+                // introduce new epoch
+                self.epoch.push(*epoch);
+                self.position.insert(*epoch, svnn.clone());
+            }
+        }
+
+        for (epoch, svnn) in &rhs.clock {
+            if let Some(lhs_sv) = self.clock.get_mut(epoch) {
+                for (sv, clock) in svnn {
+                    lhs_sv.insert(*sv, *clock);
+                }
+            } else {
+                // introduce new epoch : in clock record
+                self.clock.insert(*epoch, svnn.clone());
+                // introduce new epoch : if not contained in positions
+                let mut found = false;
+                for e in &self.epoch {
+                    found |= *e == *epoch;
+                    if found {
+                        break;
+                    }
+                }
+                if !found {
+                    self.epoch.push(*epoch);
+                }
+            }
+        }
+
+        // maintain Epochs in correct order
+        self.epoch.sort();
+
         Ok(())
     }
 }
