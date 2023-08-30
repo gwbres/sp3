@@ -37,14 +37,6 @@ pub mod prelude {
 
 pub use merge::Merge;
 
-fn sv_identifier(content: &str) -> bool {
-    content.starts_with('+') && !orbit_accuracy(content)
-}
-
-fn orbit_accuracy(content: &str) -> bool {
-    content.starts_with("++")
-}
-
 fn file_descriptor(content: &str) -> bool {
     content.starts_with("%c")
 }
@@ -61,17 +53,17 @@ fn position_entry(content: &str) -> bool {
     content.starts_with('P')
 }
 
-fn possition_error(content: &str) -> bool {
-    content.starts_with("EP")
-}
+// fn possition_error(content: &str) -> bool {
+//     content.starts_with("EP")
+// }
 
-fn velocity(content: &str) -> bool {
-    content.starts_with('V')
-}
+// fn velocity(content: &str) -> bool {
+//     content.starts_with('V')
+// }
 
-fn velocity_error(content: &str) -> bool {
-    content.starts_with("EV")
-}
+// fn velocity_error(content: &str) -> bool {
+//     content.starts_with("EV")
+// }
 
 fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
@@ -159,8 +151,8 @@ type ClockRecord = BTreeMap<Epoch, BTreeMap<Sv, f64>>;
 
 /*
  * Velocity data
+ * type VelocityData = BTreeMap<Epoch, f64>;
  */
-type VelocityData = BTreeMap<Epoch, f64>;
 
 /*
  * Comments contained in file
@@ -472,7 +464,7 @@ impl SP3 {
         }
         let before: Vec<(Epoch, f64)> = self
             .sv_position()
-            .filter_map(|(e, svnn, (x, y, z))| {
+            .filter_map(|(e, svnn, (x, _y, _z))| {
                 if e <= epoch && svnn == sv {
                     Some((e, x))
                 } else {
@@ -482,7 +474,7 @@ impl SP3 {
             .collect();
         let after: Vec<(Epoch, f64)> = self
             .sv_position()
-            .filter_map(|(e, svnn, (x, y, z))| {
+            .filter_map(|(e, svnn, (x, _y, _z))| {
                 if e > epoch && svnn == sv {
                     Some((e, x))
                 } else {
