@@ -7,10 +7,10 @@ mod test {
         let prefix = PathBuf::new().join(env!("CARGO_MANIFEST_DIR")).join("data");
 
         for file in vec![
-            "EMR0OPSULT_20232391800_02D_15M_ORB.SP3",
-            "ESA0OPSULT_20232320600_02D_15M_ORB.SP3",
-            "COD0MGXFIN_20230500000_01D_05M_ORB.SP3",
-            "ESA0OPSRAP_20232390000_01D_15M_ORB.SP3",
+            "EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz",
+            "ESA0OPSULT_20232320600_02D_15M_ORB.SP3.gz",
+            "COD0MGXFIN_20230500000_01D_05M_ORB.SP3.gz",
+            "ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz",
             "co108870.sp3",
             "em108871.sp3",
             //"emr08874.sp3",

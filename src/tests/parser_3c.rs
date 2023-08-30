@@ -10,7 +10,7 @@ mod test {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
             .join("data")
-            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3");
+            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz");
 
         let sp3 = SP3::from_file(&path.to_string_lossy());
         assert!(

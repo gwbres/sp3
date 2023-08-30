@@ -22,8 +22,8 @@ use header::{
 };
 
 use reader::BufferedReader;
-use version::Version;
 use std::io::BufRead;
+use version::Version;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
