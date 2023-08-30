@@ -2,12 +2,11 @@
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use rinex::prelude::{Constellation, Sv};
-    use rinex::sv;
+    use rinex::prelude::Constellation;
     use std::path::PathBuf;
     use std::str::FromStr;
     #[test]
-    fn ESA0OPSRAP_20232390000_01D_15M_ORB() {
+    fn esa0opsrap_20232339_01d_15m() {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
             .join("data")

@@ -1,10 +1,7 @@
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use rinex::prelude::Sv;
-    use rinex::sv;
     use std::path::PathBuf;
-    use std::str::FromStr;
     #[test]
     fn data_folder() {
         let prefix = PathBuf::new().join(env!("CARGO_MANIFEST_DIR")).join("data");
