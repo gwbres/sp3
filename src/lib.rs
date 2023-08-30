@@ -13,13 +13,17 @@ mod tests;
 
 mod header;
 mod merge;
+mod reader;
 mod version;
 
 use header::{
     line1::{is_header_line1, Line1},
     line2::{is_header_line2, Line2},
 };
+
+use reader::BufferedReader;
 use version::Version;
+use std::io::BufRead;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -288,8 +292,10 @@ fn parse_epoch(content: &str, time_scale: TimeScale) -> Result<Epoch, ParsingErr
 }
 
 impl SP3 {
-    pub fn from_file(fp: &str) -> Result<Self, Errors> {
-        let content = std::fs::read_to_string(fp)?;
+    /// Parses given SP3 file, with possible seamless
+    /// .gz decompression, if compiled with the "flate2" feature.
+    pub fn from_file(path: &str) -> Result<Self, Errors> {
+        let mut reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
@@ -316,8 +322,10 @@ impl SP3 {
         let mut epoch = Epoch::default();
         let mut epochs: Vec<Epoch> = Vec::new();
 
-        for line in content.lines() {
+        for line in reader.lines() {
+            let line = line.unwrap();
             let line = line.trim();
+
             if sp3_comment(line) {
                 comments.push(line[3..].to_string());
                 continue;
