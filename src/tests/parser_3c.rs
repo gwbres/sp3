@@ -5,6 +5,7 @@ mod test {
     use rinex::prelude::Constellation;
     use std::path::PathBuf;
     use std::str::FromStr;
+    #[cfg(feature = "flate2")]
     #[test]
     fn esa0opsrap_20232339_01d_15m() {
         let path = PathBuf::new()

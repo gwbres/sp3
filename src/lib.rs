@@ -1,12 +1,12 @@
 //! SP3 precise orbit file parser.
 #![cfg_attr(docrs, feature(doc_cfg))]
 
-use hifitime::{Duration, Epoch, TimeScale};
-use rinex::prelude::{Constellation, Sv};
 use std::collections::BTreeMap;
+use rinex::prelude::{Constellation, Sv};
+use hifitime::{Duration, Epoch, TimeScale};
 
-use std::str::FromStr;
 use thiserror::Error;
+use std::str::FromStr;
 
 #[cfg(test)]
 mod tests;
@@ -33,10 +33,6 @@ pub mod prelude {
     //pub use rinex::{Sv, Constellation};
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
-
-    #[cfg(feature = "nyx-space")]
-    #[cfg_attr(docrs, doc(cfg(feature = "nyx-space")))]
-    pub use nyx_space::cosmic::{Frame, Orbit};
 }
 
 pub use merge::Merge;
@@ -209,9 +205,6 @@ pub enum Errors {
     ConstellationParsingError(#[from] rinex::constellation::Error),
     #[error("file i/o error")]
     DataParsingError(#[from] std::io::Error),
-    #[cfg(feature = "nyx-space")]
-    #[error("interpolation failure")]
-    InterpolationError(#[from] nyx_space::NyxError),
 }
 
 #[derive(Debug, Error)]
