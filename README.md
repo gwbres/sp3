@@ -1,4 +1,4 @@
-# sp3
+# SP3
 
 [![crates.io](https://img.shields.io/crates/v/sp3.svg)](https://crates.io/crates/sp3)
 [![Rust](https://github.com/gwbres/sp3/actions/workflows/rust.yml/badge.svg)](https://github.com/gwbres/sp3/actions/workflows/rust.yml)
