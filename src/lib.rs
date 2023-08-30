@@ -307,7 +307,7 @@ impl SP3 {
         let mut epoch_interval = Duration::default();
         let mut mjd_start = (0_u32, 0_f64);
 
-        let vehicles: Vec<Sv> = Vec::new();
+        let mut vehicles: Vec<Sv> = Vec::new();
         let mut position = PositionRecord::default();
         let mut clock = ClockRecord::default();
         let mut comments = Comments::new();
@@ -357,6 +357,11 @@ impl SP3 {
                 }
                 let sv = Sv::from_str(line[1..4].trim())
                     .or(Err(ParsingError::Sv(line[1..4].to_string())))?;
+
+                //TODO : move this into %c config frame
+                if !vehicles.contains(&sv) {
+                    vehicles.push(sv);
+                }
 
                 let pos_x = f64::from_str(line[4..18].trim())
                     .or(Err(ParsingError::Coordinates(line[4..18].to_string())))?;
