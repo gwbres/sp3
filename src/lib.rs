@@ -1,7 +1,7 @@
 //! SP3 precise orbit file parser.
+#![cfg_attr(docrs, feature(doc_cfg))]
 
 use hifitime::{Duration, Epoch, TimeScale};
-//use itertools::Itertools;
 use rinex::prelude::{Constellation, Sv};
 use std::collections::BTreeMap;
 
@@ -31,6 +31,7 @@ pub mod prelude {
     pub use hifitime::{Duration, Epoch, TimeScale};
 
     #[cfg(feature = "nyx-space")]
+    #[cfg_attr(docrs, doc(cfg(feature = "nyx-space")))]
     pub use nyx_space::cosmic::{Frame, Orbit};
 }
 
@@ -212,6 +213,9 @@ pub enum Errors {
     ConstellationParsingError(#[from] rinex::constellation::Error),
     #[error("file i/o error")]
     DataParsingError(#[from] std::io::Error),
+    #[cfg(feature = "nyx-space")]
+    #[error("interpolation failure")]
+    InterpolationError(#[from] nyx_space::NyxError),
 }
 
 #[derive(Debug, Error)]
@@ -464,9 +468,14 @@ impl SP3 {
 }
 
 #[cfg(feature = "nyx-space")]
-use nyx_space::cosmic::{Frame, Orbit};
+use nyx_space::{
+    cosmic::{Frame, Orbit},
+    md::prelude::Interpolatable,
+    NyxError,
+};
 
 #[cfg(feature = "nyx-space")]
+#[cfg_attr(docrs, doc(cfg(feature = "nyx-space")))]
 impl SP3 {
     /// Returns Reference Frame used for all coordinates in this file
     pub fn reference_frame(&self) -> Frame {
@@ -487,21 +496,43 @@ impl SP3 {
             _ => panic!("Unknown frame"), // TODO
         }
     }
-    /// Returns an Iterator over self, converted to Nyx [`Orbit`]s
-    pub fn orbit(&self) -> impl Iterator<Item = Orbit> + '_ {
+    /// Returns SV position vector in the form of a Nyx [`Orbit`]
+    /// at desired Epoch.
+    pub fn orbit(&self, epoch: Epoch, sv: Sv) -> Option<Orbit> {
         let frame = self.reference_frame();
-        self.sv_position()
-            .map(move |(epoch, _sv, (x_km, y_km, z_km))| Orbit {
-                x_km,
-                y_km,
-                z_km,
-                vx_km_s: 0.0_f64,
-                vy_km_s: 0.0_f64,
-                vz_km_s: 0.0_f64,
-                epoch: epoch,
-                stm: None,
-                frame,
-            })
+        for (e, svnn, (x_km, y_km, z_km)) in self.sv_position() {
+            if e == epoch && svnn == sv {
+                return Some(Orbit {
+                    x_km,
+                    y_km,
+                    z_km,
+                    vx_km_s: 0.0_f64,
+                    vy_km_s: 0.0_f64,
+                    vz_km_s: 0.0_f64,
+                    epoch,
+                    stm: None,
+                    frame,
+                });
+            }
+        }
+        None
+    }
+}
+
+pub trait Interpolate {
+    #[cfg(feature = "nyx-space")]
+    fn interpolate_position(&self, epoch: Epoch, sv: Sv) -> Result<Orbit, NyxError>;
+    fn interpolate_time(&self, epoch: Epoch, sv: Sv) -> Result<f64, Errors>;
+}
+
+impl Interpolate for SP3 {
+    #[cfg(feature = "nyx-space")]
+    fn interpolate_position(&self, epoch: Epoch, sv: Sv) -> Result<Orbit, NyxError> {
+        let orbit = self.orbit(epoch, sv).unwrap();
+        Ok(orbit.interpolate(epoch, &[orbit])?)
+    }
+    fn interpolate_time(&self, epoch: Epoch, sv: Sv) -> Result<f64, Errors> {
+        Ok(0.0_f64)
     }
 }
 
@@ -592,7 +623,6 @@ impl Merge for SP3 {
 
         // maintain Epochs in correct order
         self.epoch.sort();
-
         Ok(())
     }
 }
