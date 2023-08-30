@@ -1,12 +1,12 @@
 //! SP3 precise orbit file parser.
 #![cfg_attr(docrs, feature(doc_cfg))]
 
-use std::collections::BTreeMap;
-use rinex::prelude::{Constellation, Sv};
 use hifitime::{Duration, Epoch, TimeScale};
+use rinex::prelude::{Constellation, Sv};
+use std::collections::BTreeMap;
 
-use thiserror::Error;
 use std::str::FromStr;
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
