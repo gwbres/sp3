@@ -1,7 +1,7 @@
 //! SP3 precise orbit file parser.
+#![cfg_attr(docrs, feature(doc_cfg))]
 
 use hifitime::{Duration, Epoch, TimeScale};
-//use itertools::Itertools;
 use rinex::prelude::{Constellation, Sv};
 use std::collections::BTreeMap;
 
@@ -11,7 +11,18 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
+mod header;
+mod merge;
+mod reader;
 mod version;
+
+use header::{
+    line1::{is_header_line1, Line1},
+    line2::{is_header_line2, Line2},
+};
+
+use reader::BufferedReader;
+use std::io::BufRead;
 use version::Version;
 
 #[cfg(feature = "serde")]
@@ -24,21 +35,7 @@ pub mod prelude {
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
 
-fn header_line1(content: &str) -> bool {
-    content.starts_with('#') && !header_line2(content)
-}
-
-fn header_line2(content: &str) -> bool {
-    content.starts_with("##")
-}
-
-fn sv_identifier(content: &str) -> bool {
-    content.starts_with('+') && !orbit_accuracy(content)
-}
-
-fn orbit_accuracy(content: &str) -> bool {
-    content.starts_with("++")
-}
+pub use merge::Merge;
 
 fn file_descriptor(content: &str) -> bool {
     content.starts_with("%c")
@@ -56,17 +53,17 @@ fn position_entry(content: &str) -> bool {
     content.starts_with('P')
 }
 
-fn possition_error(content: &str) -> bool {
-    content.starts_with("EP")
-}
+// fn possition_error(content: &str) -> bool {
+//     content.starts_with("EP")
+// }
 
-fn velocity(content: &str) -> bool {
-    content.starts_with('V')
-}
+// fn velocity(content: &str) -> bool {
+//     content.starts_with('V')
+// }
 
-fn velocity_error(content: &str) -> bool {
-    content.starts_with("EV")
-}
+// fn velocity_error(content: &str) -> bool {
+//     content.starts_with("EV")
+// }
 
 fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
@@ -88,12 +85,12 @@ impl std::fmt::Display for DataType {
 }
 
 impl std::str::FromStr for DataType {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("P") {
             Ok(Self::Position)
         } else {
-            Err(Errors::UnknownDataType(s.to_string()))
+            Err(ParsingError::UnknownDataType(s.to_string()))
         }
     }
 }
@@ -122,7 +119,7 @@ impl std::fmt::Display for OrbitType {
 }
 
 impl std::str::FromStr for OrbitType {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("FIT") {
             Ok(Self::FIT)
@@ -135,7 +132,7 @@ impl std::str::FromStr for OrbitType {
         } else if s.eq("HLM") {
             Ok(Self::HLM)
         } else {
-            Err(Errors::UnknownOrbitType(s.to_string()))
+            Err(ParsingError::UnknownOrbitType(s.to_string()))
         }
     }
 }
@@ -154,8 +151,8 @@ type ClockRecord = BTreeMap<Epoch, BTreeMap<Sv, f64>>;
 
 /*
  * Velocity data
+ * type VelocityData = BTreeMap<Epoch, f64>;
  */
-type VelocityData = BTreeMap<Epoch, f64>;
 
 /*
  * Comments contained in file
@@ -206,18 +203,18 @@ pub enum Errors {
     HifitimeParsingError(#[from] hifitime::Errors),
     #[error("constellation parsing error")]
     ConstellationParsingError(#[from] rinex::constellation::Error),
-    #[error("unknown or non supported revision \"{0}\"")]
-    UnknownVersion(String),
-    #[error("unknown data type \"{0}\"")]
-    UnknownDataType(String),
-    #[error("unknown orbit type \"{0}\"")]
-    UnknownOrbitType(String),
     #[error("file i/o error")]
     DataParsingError(#[from] std::io::Error),
 }
 
 #[derive(Debug, Error)]
 pub enum ParsingError {
+    #[error("unknown or non supported revision \"{0}\"")]
+    UnknownVersion(String),
+    #[error("unknown data type \"{0}\"")]
+    UnknownDataType(String),
+    #[error("unknown orbit type \"{0}\"")]
+    UnknownOrbitType(String),
     #[error("malformed header line #1")]
     MalformedH1,
     #[error("malformed header line #2")]
@@ -288,8 +285,10 @@ fn parse_epoch(content: &str, time_scale: TimeScale) -> Result<Epoch, ParsingErr
 }
 
 impl SP3 {
-    pub fn from_file(fp: &str) -> Result<Self, Errors> {
-        let content = std::fs::read_to_string(fp)?;
+    /// Parses given SP3 file, with possible seamless
+    /// .gz decompression, if compiled with the "flate2" feature.
+    pub fn from_file(path: &str) -> Result<Self, Errors> {
+        let mut reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
@@ -316,8 +315,10 @@ impl SP3 {
         let mut epoch = Epoch::default();
         let mut epochs: Vec<Epoch> = Vec::new();
 
-        for line in content.lines() {
+        for line in reader.lines() {
+            let line = line.unwrap();
             let line = line.trim();
+
             if sp3_comment(line) {
                 comments.push(line[3..].to_string());
                 continue;
@@ -325,46 +326,13 @@ impl SP3 {
             if end_of_file(line) {
                 break;
             }
-            if header_line1(line) {
-                if line.len() != 60 {
-                    return Err(Errors::ParsingError(ParsingError::MalformedH1));
-                }
-
-                version = Version::from_str(&line[1..2])?;
-                data_type = DataType::from_str(&line[2..3])?;
-
-                //start_epoch = parse_epoch(&line[3..], TimeScale::UTC)?;
-
-                //nb_epochs = u32::from_str(line[31..39].trim())
-                //    .or(Err(ParsingError::NumberEpoch(line[31..39].to_string())))?;
-
-                //= &line[39..45];
-
-                coord_system = line[45..51].trim().to_string();
-
-                orbit_type = OrbitType::from_str(line[51..55].trim())?;
-                agency = line[55..].trim().to_string();
+            if is_header_line1(line) && !is_header_line2(line) {
+                let l1 = Line1::from_str(line)?;
+                (version, data_type, coord_system, orbit_type, agency) = l1.to_parts();
             }
-            if header_line2(line) {
-                if line.len() != 60 {
-                    return Err(Errors::ParsingError(ParsingError::MalformedH2));
-                }
-
-                week_counter.0 = u32::from_str(line[2..7].trim())
-                    .or(Err(ParsingError::WeekCounter(line[2..7].to_string())))?;
-
-                week_counter.1 = f64::from_str(line[7..23].trim())
-                    .or(Err(ParsingError::WeekCounter(line[7..23].to_string())))?;
-
-                let dt = f64::from_str(line[24..38].trim())
-                    .or(Err(ParsingError::EpochInterval(line[24..38].to_string())))?;
-                epoch_interval = Duration::from_seconds(dt);
-
-                mjd_start.0 = u32::from_str(line[38..44].trim())
-                    .or(Err(ParsingError::Mjd(line[38..44].to_string())))?;
-
-                mjd_start.1 = f64::from_str(line[44..].trim())
-                    .or(Err(ParsingError::Mjd(line[44..].to_string())))?;
+            if is_header_line2(line) {
+                let l2 = Line2::from_str(line)?;
+                (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
             if file_descriptor(line) {
                 if line.len() < 60 {
@@ -455,11 +423,6 @@ impl SP3 {
     pub fn epoch(&self) -> impl Iterator<Item = Epoch> + '_ {
         self.epoch.iter().copied()
     }
-    /// Returns a Unique Epoch Iterator, expressed in UTC,
-    /// ie., with leap seconds take into account. Useful when processing Self.
-    pub fn epoch_utc(&self) -> impl Iterator<Item = Epoch> + '_ {
-        self.epoch().map(|e| e.in_time_scale(TimeScale::UTC))
-    }
     /// Returns total number of epoch
     pub fn nb_epochs(&self) -> usize {
         self.epoch.len()
@@ -489,5 +452,159 @@ impl SP3 {
         self.clock
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
+    }
+    /// Fit Lagrangian polynomial of desired oreder, to interpolate data at desired Epoch.
+    /// Only Odd orders are currently supported currently !
+    pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<(f64, f64, f64)> {
+        let x = epoch;
+        if order % 2 > 0 {
+            /*
+             * Only odd orders currently supported
+             */
+            return None;
+        }
+        let before: Vec<(Epoch, f64)> = self
+            .sv_position()
+            .filter_map(|(e, svnn, (x, _y, _z))| {
+                if e <= epoch && svnn == sv {
+                    Some((e, x))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let after: Vec<(Epoch, f64)> = self
+            .sv_position()
+            .filter_map(|(e, svnn, (x, _y, _z))| {
+                if e > epoch && svnn == sv {
+                    Some((e, x))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if before.len() < order / 2 && after.len() < order / 2 {
+            return None; // not enough data in this window
+        }
+
+        let n = before.len();
+        let mut lagrangians: Vec<f64> = Vec::with_capacity(order);
+        let mut polynomials: Vec<f64> = Vec::with_capacity(order);
+        for i in 0..order {
+            let mut prod = 1.0_f64;
+            for j in 0..order {
+                if i == j {
+                    continue;
+                }
+                if j > order / 2 {
+                    prod *= (x - after[j].0).to_seconds();
+                    prod /= (after[i].0 - after[j].0).to_seconds();
+                } else {
+                    prod *= (x - before[n - j].0).to_seconds();
+                    prod /= (before[n - i].0 - before[n - j].0).to_seconds();
+                }
+            }
+            lagrangians[i] = prod;
+        }
+        for i in 0..order {
+            if i > order / 2 {
+                polynomials[i] += after[i].1 * lagrangians[i];
+            } else {
+                polynomials[i] += before[i].1 * lagrangians[i];
+            }
+        }
+        Some((0.0_f64, 0.0_f64, 0.0_f64))
+    }
+}
+
+use merge::MergeError;
+
+impl Merge for SP3 {
+    fn merge(&self, rhs: &Self) -> Result<Self, MergeError> {
+        let mut s = self.clone();
+        s.merge_mut(rhs)?;
+        Ok(s)
+    }
+    fn merge_mut(&mut self, rhs: &Self) -> Result<(), MergeError> {
+        if self.agency != rhs.agency {
+            return Err(MergeError::DataProvider);
+        }
+        if self.time_system != rhs.time_system {
+            return Err(MergeError::TimeScale);
+        }
+        if self.coord_system != rhs.coord_system {
+            return Err(MergeError::CoordSystem);
+        }
+        if self.constellation != rhs.constellation {
+            /*
+             * Convert self to Mixed constellation
+             */
+            self.constellation = Constellation::Mixed;
+        }
+        // adjust revision
+        if rhs.version > self.version {
+            self.version = rhs.version;
+        }
+        // Adjust MJD start
+        if rhs.mjd_start.0 < self.mjd_start.0 {
+            self.mjd_start.0 = rhs.mjd_start.0;
+        }
+        if rhs.mjd_start.1 < self.mjd_start.1 {
+            self.mjd_start.1 = rhs.mjd_start.1;
+        }
+        // Adjust week counter
+        if rhs.week_counter.0 < self.week_counter.0 {
+            self.week_counter.0 = rhs.week_counter.0;
+        }
+        if rhs.week_counter.1 < self.week_counter.1 {
+            self.week_counter.1 = rhs.week_counter.1;
+        }
+        // update Sv table
+        for sv in &rhs.sv {
+            if !self.sv.contains(sv) {
+                self.sv.push(*sv);
+            }
+        }
+        // update sampling interval (pessimistic)
+        self.epoch_interval = std::cmp::max(self.epoch_interval, rhs.epoch_interval);
+
+        for (epoch, svnn) in &rhs.position {
+            if let Some(lhs_sv) = self.position.get_mut(epoch) {
+                for (sv, position) in svnn {
+                    lhs_sv.insert(*sv, *position);
+                }
+            } else {
+                // introduce new epoch
+                self.epoch.push(*epoch);
+                self.position.insert(*epoch, svnn.clone());
+            }
+        }
+
+        for (epoch, svnn) in &rhs.clock {
+            if let Some(lhs_sv) = self.clock.get_mut(epoch) {
+                for (sv, clock) in svnn {
+                    lhs_sv.insert(*sv, *clock);
+                }
+            } else {
+                // introduce new epoch : in clock record
+                self.clock.insert(*epoch, svnn.clone());
+                // introduce new epoch : if not contained in positions
+                let mut found = false;
+                for e in &self.epoch {
+                    found |= *e == *epoch;
+                    if found {
+                        break;
+                    }
+                }
+                if !found {
+                    self.epoch.push(*epoch);
+                }
+            }
+        }
+
+        // maintain Epochs in correct order
+        self.epoch.sort();
+        Ok(())
     }
 }

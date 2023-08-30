@@ -2,16 +2,16 @@
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use rinex::prelude::{Constellation, Sv};
-    use rinex::sv;
+    use rinex::prelude::Constellation;
     use std::path::PathBuf;
     use std::str::FromStr;
+    #[cfg(feature = "flate2")]
     #[test]
-    fn ESA0OPSRAP_20232390000_01D_15M_ORB() {
+    fn esa0opsrap_20232339_01d_15m() {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
             .join("data")
-            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3");
+            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz");
 
         let sp3 = SP3::from_file(&path.to_string_lossy());
         assert!(

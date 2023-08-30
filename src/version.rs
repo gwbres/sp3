@@ -1,11 +1,11 @@
 //! sp3 version
 
-use crate::Errors;
+use crate::ParsingError;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Hash)]
+#[derive(Default, Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Version {
     A,
@@ -27,7 +27,7 @@ impl std::fmt::Display for Version {
 }
 
 impl std::str::FromStr for Version {
-    type Err = Errors;
+    type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("a") {
             Ok(Self::A)
@@ -38,7 +38,7 @@ impl std::str::FromStr for Version {
         } else if s.eq("d") {
             Ok(Self::D)
         } else {
-            Err(Errors::UnknownVersion(s.to_string()))
+            Err(ParsingError::UnknownVersion(s.to_string()))
         }
     }
 }
@@ -110,5 +110,10 @@ mod test {
         assert_eq!(version, Version::C);
         assert_eq!(version + 1, Version::D);
         assert_eq!(version - 1, Version::C);
+
+        assert!(Version::A < Version::B);
+        assert!(Version::A < Version::C);
+        assert!(Version::A < Version::D);
+        assert!(Version::D > Version::C);
     }
 }
