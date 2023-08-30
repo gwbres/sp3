@@ -430,11 +430,6 @@ impl SP3 {
     pub fn epoch(&self) -> impl Iterator<Item = Epoch> + '_ {
         self.epoch.iter().copied()
     }
-    /// Returns a Unique Epoch Iterator, expressed in UTC,
-    /// ie., with leap seconds take into account. Useful when processing Self.
-    pub fn epoch_utc(&self) -> impl Iterator<Item = Epoch> + '_ {
-        self.epoch().map(|e| e.in_time_scale(TimeScale::UTC))
-    }
     /// Returns total number of epoch
     pub fn nb_epochs(&self) -> usize {
         self.epoch.len()
@@ -465,74 +460,68 @@ impl SP3 {
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
     }
-}
-
-#[cfg(feature = "nyx-space")]
-use nyx_space::{
-    cosmic::{Frame, Orbit},
-    md::prelude::Interpolatable,
-    NyxError,
-};
-
-#[cfg(feature = "nyx-space")]
-#[cfg_attr(docrs, doc(cfg(feature = "nyx-space")))]
-impl SP3 {
-    /// Returns Reference Frame used for all coordinates in this file
-    pub fn reference_frame(&self) -> Frame {
-        match self.coord_system.as_str() {
-            "ITR91" | "IGS05" | "IGS20" | "IGb00" | "IGS14" | "ITRF2" => {
-                /*
-                 * TODO
-                 */
-                Frame::Geoid {
-                    gm: 0.0_f64,                     // TODO
-                    flattening: 1.0 / 298.257223563, // This is WGS84 only
-                    semi_major_radius: 6378137.0,    // This is WGS84
-                    equatorial_radius: 0.0_f64,      // TODO
-                    ephem_path: [None, None, None],
-                    frame_path: [None, None, None],
-                }
-            },
-            _ => panic!("Unknown frame"), // TODO
+    /// Fit Lagrangian polynomial of desired oreder, to interpolate data at desired Epoch.
+    /// Only Odd orders are currently supported currently !
+    pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<(f64, f64, f64)> {
+        let x = epoch;
+        if order % 2 > 0 {
+            /*
+             * Only odd orders currently supported
+             */
+            return None;
         }
-    }
-    /// Returns SV position vector in the form of a Nyx [`Orbit`]
-    /// at desired Epoch.
-    pub fn orbit(&self, epoch: Epoch, sv: Sv) -> Option<Orbit> {
-        let frame = self.reference_frame();
-        for (e, svnn, (x_km, y_km, z_km)) in self.sv_position() {
-            if e == epoch && svnn == sv {
-                return Some(Orbit {
-                    x_km,
-                    y_km,
-                    z_km,
-                    vx_km_s: 0.0_f64,
-                    vy_km_s: 0.0_f64,
-                    vz_km_s: 0.0_f64,
-                    epoch,
-                    stm: None,
-                    frame,
-                });
+        let before: Vec<(Epoch, f64)> = self
+            .sv_position()
+            .filter_map(|(e, svnn, (x, y, z))| {
+                if e <= epoch && svnn == sv {
+                    Some((e, x))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let after: Vec<(Epoch, f64)> = self
+            .sv_position()
+            .filter_map(|(e, svnn, (x, y, z))| {
+                if e > epoch && svnn == sv {
+                    Some((e, x))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if before.len() < order / 2 && after.len() < order / 2 {
+            return None; // not enough data in this window
+        }
+
+        let n = before.len();
+        let mut lagrangians: Vec<f64> = Vec::with_capacity(order);
+        let mut polynomials: Vec<f64> = Vec::with_capacity(order);
+        for i in 0..order {
+            let mut prod = 1.0_f64;
+            for j in 0..order {
+                if i == j {
+                    continue;
+                }
+                if j > order / 2 {
+                    prod *= (x - after[j].0).to_seconds();
+                    prod /= (after[i].0 - after[j].0).to_seconds();
+                } else {
+                    prod *= (x - before[n - j].0).to_seconds();
+                    prod /= (before[n - i].0 - before[n - j].0).to_seconds();
+                }
+            }
+            lagrangians[i] = prod;
+        }
+        for i in 0..order {
+            if i > order / 2 {
+                polynomials[i] += after[i].1 * lagrangians[i];
+            } else {
+                polynomials[i] += before[i].1 * lagrangians[i];
             }
         }
-        None
-    }
-}
-
-pub trait Interpolate {
-    #[cfg(feature = "nyx-space")]
-    fn interpolate_position(&self, epoch: Epoch, sv: Sv) -> Result<Orbit, NyxError>;
-    fn interpolate_time(&self, epoch: Epoch, sv: Sv) -> Result<f64, Errors>;
-}
-
-impl Interpolate for SP3 {
-    #[cfg(feature = "nyx-space")]
-    fn interpolate_position(&self, epoch: Epoch, sv: Sv) -> Result<Orbit, NyxError> {
-        let orbit = self.orbit(epoch, sv).unwrap();
-        Ok(orbit.interpolate(epoch, &[orbit])?)
-    }
-    fn interpolate_time(&self, epoch: Epoch, sv: Sv) -> Result<f64, Errors> {
-        Ok(0.0_f64)
+        Some((0.0_f64, 0.0_f64, 0.0_f64))
     }
 }
 
