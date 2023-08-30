@@ -28,6 +28,9 @@ pub mod prelude {
     //pub use rinex::{Sv, Constellation};
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
+
+    #[cfg(feature = "nyx-space")]
+    pub use nyx_space::cosmic::{Frame, Orbit};
 }
 
 fn sv_identifier(content: &str) -> bool {
@@ -454,5 +457,47 @@ impl SP3 {
         self.clock
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
+    }
+}
+
+#[cfg(feature = "nyx-space")]
+use nyx_space::cosmic::{Frame, Orbit};
+
+#[cfg(feature = "nyx-space")]
+impl SP3 {
+    /// Returns Reference Frame used for all coordinates in this file
+    pub fn reference_frame(&self) -> Frame {
+        match self.coord_system.as_str() {
+            "ITR91" | "IGS05" | "IGS20" | "IGb00" | "IGS14" | "ITRF2" => {
+                /*
+                 * TODO
+                 */
+                Frame::Geoid {
+                    gm: 0.0_f64,                     // TODO
+                    flattening: 1.0 / 298.257223563, // This is WGS84 only
+                    semi_major_radius: 6378137.0,    // This is WGS84
+                    equatorial_radius: 0.0_f64,      // TODO
+                    ephem_path: [None, None, None],
+                    frame_path: [None, None, None],
+                }
+            },
+            _ => panic!("Unknown frame"), // TODO
+        }
+    }
+    /// Returns an Iterator over self, converted to Nyx [`Orbit`]s
+    pub fn orbit(&self) -> impl Iterator<Item = Orbit> + '_ {
+        let frame = self.reference_frame();
+        self.sv_position()
+            .map(move |(epoch, _sv, (x_km, y_km, z_km))| Orbit {
+                x_km,
+                y_km,
+                z_km,
+                vx_km_s: 0.0_f64,
+                vy_km_s: 0.0_f64,
+                vz_km_s: 0.0_f64,
+                epoch: epoch,
+                stm: None,
+                frame,
+            })
     }
 }
