@@ -12,6 +12,7 @@ use thiserror::Error;
 mod tests;
 
 mod header;
+mod merge;
 mod version;
 
 use header::{
@@ -32,6 +33,8 @@ pub mod prelude {
     #[cfg(feature = "nyx-space")]
     pub use nyx_space::cosmic::{Frame, Orbit};
 }
+
+pub use merge::Merge;
 
 fn sv_identifier(content: &str) -> bool {
     content.starts_with('+') && !orbit_accuracy(content)
@@ -499,5 +502,18 @@ impl SP3 {
                 stm: None,
                 frame,
             })
+    }
+}
+
+use merge::MergeError;
+
+impl Merge for SP3 {
+    fn merge(&self, rhs: &Self) -> Result<Self, MergeError> {
+        let mut s = self.clone();
+        s.merge_mut(rhs)?;
+        Ok(s)
+    }
+    fn merge_mut(&mut self, rhs: &Self) -> Result<(), MergeError> {
+        Ok(())
     }
 }
