@@ -458,16 +458,15 @@ impl SP3 {
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
     }
-    /// Fit Lagrangian polynomial of desired oreder, to interpolate data at desired Epoch.
-    /// Only Odd orders are currently supported currently !
+    /// Interpolate position vector, to predict position vector at desired Epoch.
+    /// Interpolation order of 11 is recommended to preserve high precision orbits.
+    /// We use a window centered on desired Epoch, that means for an evenly sampled
+    /// SP3 file, the earliest interpolatable Epoch is T0 + (order +1)*dt/2,
+    /// and the latest is T(N-1) - (oder +1)*dt /2, where T0 is the first epoch,
+    /// T(N-1) the last one, and dt the epoch interval.
     pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<(f64, f64, f64)> {
         let x = epoch;
-        if order % 2 > 0 {
-            /*
-             * Only odd orders currently supported
-             */
-            return None;
-        }
+        let odd_order = order % 2 > 0;
         let before: Vec<(Epoch, f64)> = self
             .sv_position()
             .filter_map(|(e, svnn, (x, _y, _z))| {
@@ -489,36 +488,51 @@ impl SP3 {
             })
             .collect();
 
-        if before.len() < order / 2 && after.len() < order / 2 {
-            return None; // not enough data in this window
+        /*
+         * test interpolation feasibility based on data context
+         * and desired order
+         */
+        if odd_order {
+            let min = (order / 2) + 1;
+            if before.len() < min || after.len() < min {
+                return None;
+            }
+        } else {
+            let (left, right) = (order / 2 + 1, (order + 1) / 2);
+            if before.len() < left || after.len() < right {
+                let (left, right) = ((order + 1) / 2, order / 2 + 1);
+                if before.len() < left || after.len() < right {
+                    return None;
+                }
+            }
         }
 
-        let n = before.len();
-        let mut lagrangians: Vec<f64> = Vec::with_capacity(order);
-        let mut polynomials: Vec<f64> = Vec::with_capacity(order);
-        for i in 0..order {
-            let mut prod = 1.0_f64;
-            for j in 0..order {
-                if i == j {
-                    continue;
-                }
-                if j > order / 2 {
-                    prod *= (x - after[j].0).to_seconds();
-                    prod /= (after[i].0 - after[j].0).to_seconds();
-                } else {
-                    prod *= (x - before[n - j].0).to_seconds();
-                    prod /= (before[n - i].0 - before[n - j].0).to_seconds();
-                }
-            }
-            lagrangians[i] = prod;
-        }
-        for i in 0..order {
-            if i > order / 2 {
-                polynomials[i] += after[i].1 * lagrangians[i];
-            } else {
-                polynomials[i] += before[i].1 * lagrangians[i];
-            }
-        }
+        // let n = before.len();
+        // let mut lagrangians: Vec<f64> = Vec::with_capacity(order);
+        // let mut polynomials: Vec<f64> = Vec::with_capacity(order);
+        // for i in 0..order {
+        //     let mut prod = 1.0_f64;
+        //     for j in 0..order {
+        //         if i == j {
+        //             continue;
+        //         }
+        //         if j > order / 2 {
+        //             prod *= (x - after[j].0).to_seconds();
+        //             prod /= (after[i].0 - after[j].0).to_seconds();
+        //         } else {
+        //             prod *= (x - before[n - j].0).to_seconds();
+        //             prod /= (before[n - i -1].0 - before[n - j].0).to_seconds();
+        //         }
+        //     }
+        //     lagrangians[i] = prod;
+        // }
+        // for i in 0..order {
+        //     if i > order / 2 {
+        //         polynomials[i] += after[i].1 * lagrangians[i];
+        //     } else {
+        //         polynomials[i] += before[i].1 * lagrangians[i];
+        //     }
+        // }
         Some((0.0_f64, 0.0_f64, 0.0_f64))
     }
 }
