@@ -135,13 +135,13 @@ let epoch = Epoch::from_str("2023-08-27T00:00:00 GPST")
 let interpolated = sp3.interpolate(epoch, sv!("G01"), 11);
 assert!(interpolated.is_none(), "too early in this file");
 
-// let epoch = Epoch::from_str("2023-08-27T27:13:45 GPST")
-//     .unwrap();
-// let interpolated = sp3.interpolate(epoch, sv!("G01"), 11);
-// assert!(interpolated.is_some());
-// let (x, y, z) = interpolated.unwrap();
-// // demonstrate error is still sub cm
-// assert!((x - 15950.287210).abs() * 1.0E3 < 1.0E-2); // distances are expressed in km in all SP3
-// assert!((y - 13891.098497).abs() * 1.0E3 < 1.0E-2);
-// assert!((z - -16616.909377).abs() * 1.0E3 < 1.0E-2);
+let epoch = Epoch::from_str("2023-08-27T08:15:00 GPST")
+   .unwrap();
+let interpolated = sp3.interpolate(epoch, sv!("G01"), 11);
+assert!(interpolated.is_some());
+let (x, y, z) = interpolated.unwrap();
+// demonstrate error is still sub cm
+assert!((x - 13281.083885).abs() * 1.0E3 < 1.0E-2); // distances are expressed in km in all SP3
+assert!((y - -11661.887057).abs() * 1.0E3 < 1.0E-2);
+assert!((z - 19365.687261).abs() * 1.0E3 < 1.0E-2);
 ```
