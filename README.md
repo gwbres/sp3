@@ -105,8 +105,8 @@ assert!(sp3.is_ok());
 
 Interpolate SV position at desired Epoch.  
 In order to preserve the high (+/- 1mm precision) for SP3 datasets,
-we recommend using at least a 9th interpolation order, for a classical SP3 file
-sampled every 15 minutes.
+we recommend using at least an interpolation order of 9 for typical SP3 files
+with 15' epoch intervals.
 
 The current implementation restricts the interpolatable Epochs at 
 [tmin, tmax] = [(N +1)/2 * τ, T(n-1) - (N +1)/2 * ],
