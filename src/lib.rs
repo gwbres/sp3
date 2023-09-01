@@ -290,7 +290,8 @@ impl SP3 {
         let mut data_type = DataType::default();
 
         let mut time_system = TimeScale::default();
-        let constellation = Constellation::default();
+        let mut constellation = Constellation::default();
+        let mut pc_count = 0_u8;
 
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
@@ -327,10 +328,19 @@ impl SP3 {
                 let l2 = Line2::from_str(line)?;
                 (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
-            if file_descriptor(line) && line.len() < 60 {
-                return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
-                    line.to_string(),
-                )));
+            if file_descriptor(line) {
+                if line.len() < 60 {
+                    return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
+                        line.to_string(),
+                    )));
+                }
+
+                if pc_count == 0 {
+                    constellation = Constellation::from_str(line[3..4].trim())?;
+                    time_system = TimeScale::from_str(line[9..12].trim())?;
+                }
+
+                pc_count += 1;
             }
             if new_epoch(line) {
                 epoch = parse_epoch(&line[3..], time_system)?;
