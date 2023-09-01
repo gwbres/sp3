@@ -284,17 +284,13 @@ impl SP3 {
     /// Parses given SP3 file, with possible seamless
     /// .gz decompression, if compiled with the "flate2" feature.
     pub fn from_file(path: &str) -> Result<Self, Errors> {
-        let mut reader = BufferedReader::new(path)?;
+        let reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
 
-        let mut pf_count = 0_u8;
-        let mut pc_count = 0_u8;
-        let mut pi_count = 0_u8;
-
         let mut time_system = TimeScale::default();
-        let mut constellation = Constellation::default();
+        let constellation = Constellation::default();
 
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
@@ -331,19 +327,10 @@ impl SP3 {
                 let l2 = Line2::from_str(line)?;
                 (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
-            if file_descriptor(line) {
-                if line.len() < 60 {
-                    return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
-                        line.to_string(),
-                    )));
-                }
-
-                if pc_count == 0 {
-                    constellation = Constellation::from_str(line[3..4].trim())?;
-                    time_system = TimeScale::from_str(line[9..12].trim())?;
-                }
-
-                pc_count += 1;
+            if file_descriptor(line) && line.len() < 60 {
+                return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
+                    line.to_string(),
+                )));
             }
             if new_epoch(line) {
                 epoch = parse_epoch(&line[3..], time_system)?;
@@ -512,66 +499,55 @@ impl SP3 {
     /// and the latest is T(N-1) - (oder +1)*dt /2, where T0 is the first epoch,
     /// T(N-1) the last one, and dt the epoch interval.
     pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<Vector3D> {
-        let x = epoch;
         let odd_order = order % 2 > 0;
-        let before = self.sv_position().filter_map(|(e, svnn, (x, y, z))| {
-            if e <= epoch && svnn == sv {
-                Some((e, (x, y, z)))
-            } else {
-                None
-            }
-        });
-        let after = self.sv_position().filter_map(|(e, svnn, (x, y, z))| {
-            if e > epoch && svnn == sv {
-                Some((e, (x, y, z)))
-            } else {
-                None
-            }
-        });
-        /*
-         * test interpolation feasibility based on data context
-         * and desired order
-         */
-        if odd_order {
-            let min = (order / 2) + 1;
-            if before.count() < min || after.count() < min {
-                return None;
-            }
-        } else {
-            let (left, right) = (order / 2 + 1, (order + 1) / 2);
-            if before.count() < left || after.count() < right {
-                let (left, right) = ((order + 1) / 2, order / 2 + 1);
-                if before.count() < left || after.count() < right {
+        let sv_data: Vec<_> = self
+            .sv_position()
+            .filter_map(
+                |(e, svnn, data)| {
+                    if svnn == sv {
+                        Some((e, data))
+                    } else {
+                        None
+                    }
+                },
+            )
+            .collect();
+        let center = sv_data
+            .iter()
+            .find(|(e, _)| (*e - epoch).abs() < self.epoch_interval);
+        if let Some(center) = center {
+            let center = sv_data.iter().position(|x| x.0 == center.0);
+            if let Some(center) = center {
+                // define window
+                let (min_before, min_after): (usize, usize) = match odd_order {
+                    true => ((order + 1) / 2, (order + 1) / 2),
+                    false => (order / 2, order / 2 + 1),
+                };
+                if center < min_before || sv_data.len() - center < min_after {
                     return None;
                 }
-            }
-        }
-        let interp: Vec<(Epoch, Vector3D)> = before
-            /*
-             * TODO: ca existe une methode
-             *    pour ne garder que les N derniers items ?
-             */
-            .chain(after)
-            /*
-             * TODO : ca existe une methode
-             *   pour ne garder que les N premiers items ?
-             */
-            .collect();
+                let offset = center - min_before;
 
-        let mut polynomials = Vector3D::default();
-        for i in 0..order {
-            let mut li = 1.0_f64;
-            for j in 0..order {
-                if j != i {
-                    li *= (epoch - interp[j].0).to_seconds();
-                    li /= (interp[order - 1].0 - interp[j].0).to_seconds();
+                let mut polynomials = Vector3D::default();
+                for i in 0..order + 1 {
+                    let mut li = 1.0_f64;
+                    for j in 0..order + 1 {
+                        if j != i {
+                            li *= (epoch - sv_data[offset + j].0).to_seconds();
+                            li /= (sv_data[offset + i].0 - sv_data[offset + j].0).to_seconds();
+                        }
+                    }
+                    polynomials.0 += sv_data[offset + i].1 .0 * li;
+                    polynomials.1 += sv_data[offset + i].1 .1 * li;
+                    polynomials.2 += sv_data[offset + i].1 .2 * li;
                 }
+                Some(polynomials)
+            } else {
+                None
             }
-            polynomials.0 += interp[i].1 .0 * li;
-            polynomials.1 += interp[i].1 .1 * li;
-            polynomials.2 += interp[i].1 .2 * li;
+        } else {
+            None
         }
-        Some(polynomials)
     }
 }
 

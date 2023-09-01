@@ -15,15 +15,12 @@ mod test {
         for (e, _) in values {
             q *= (epoch - e).to_seconds();
         }
-        let mut fact = (order + 1) as f64;
-        for i in 0..order {
-            fact *= i as f64;
-        }
-        q.abs() / fact // TODO f^(n+1)[x]
+        let factorial: usize = (1..=order + 1).product();
+        q.abs() / factorial as f64 // TODO f^(n+1)[x]
     }
     #[cfg(feature = "flate2")]
     #[test]
-    fn interp_5() {
+    fn interp_feasibility() {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
             .join("data")
@@ -34,54 +31,114 @@ mod test {
             "failed to parse EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz"
         );
         let sp3 = sp3.unwrap();
-        for (epoch_desc, feasible, epoch_exists) in vec![
-            ("2023-08-27T18:00:05 GPST", false, false),
-            ("2023-08-27T18:00:15 GPST", false, false),
-            ("2023-08-27T18:00:30 GPST", false, false),
-            ("2023-08-27T18:00:45 GPST", false, false),
-            ("2023-08-27T18:15:00 GPST", false, false),
-            ("2023-08-27T18:30:00 GPST", true, false),
-            ("2023-08-27T18:30:10 GPST", true, false),
-            ("2023-08-27T18:45:00 GPST", true, false),
-            ("2023-08-27T19:00:00 GPST", true, false),
-            ("2023-08-27T19:15:00 GPST", true, true),
-            ("2023-08-27T19:30:00 GPST", true, true),
-            ("2023-08-27T19:45:00 GPST", true, true),
-            ("2023-08-27T20:00:00 GPST", true, true),
+        for (epoch_desc, feasible) in vec![
+            ("2023-08-27T18:00:00 GPST", false),
+            ("2023-08-27T18:00:05 GPST", false),
+            ("2023-08-27T18:00:15 GPST", false),
+            ("2023-08-27T18:00:30 GPST", false),
+            ("2023-08-27T18:00:45 GPST", false),
+            ("2023-08-27T18:15:00 GPST", false),
+            ("2023-08-27T18:30:00 GPST", false),
+            ("2023-08-27T18:30:10 GPST", false),
+            ("2023-08-27T18:45:00 GPST", true),
+            ("2023-08-27T18:45:01 GPST", true),
+            ("2023-08-27T18:45:05 GPST", true),
+            ("2023-08-27T18:45:10 GPST", true),
+            ("2023-08-27T19:00:00 GPST", true),
+            ("2023-08-27T19:00:01 GPST", true),
+            ("2023-08-27T19:00:05 GPST", true),
+            ("2023-08-27T19:15:00 GPST", true),
+            ("2023-08-27T19:30:00 GPST", true),
+            ("2023-08-27T19:45:00 GPST", true),
+            ("2023-08-27T20:00:00 GPST", true),
+            ("2023-08-27T20:15:00 GPST", true),
+            ("2023-08-27T20:30:00 GPST", true),
+            ("2023-08-27T20:45:00 GPST", true),
         ] {
             let epoch = Epoch::from_str(epoch_desc).unwrap();
-            let position = sp3.interpolate(e, sv!("G01"), 5);
+            let interpolated = sp3.interpolate(epoch, sv!("G01"), 5);
             assert_eq!(
-                position.is_some(),
+                interpolated.is_some(),
                 feasible,
-                "failed for \"{}\"",
+                "interpolation feasibility should be : {} for \"{}\"",
+                feasible,
                 epoch_desc
             );
-            if feasible {
-                let vector3d = position.unwrap();
-                if epoch_exists {
-                    let position = sp3
-                        .sv_position()
-                        .filter_map(|(e, svnn, position)| {
-                            if e == epoch && svnn == sv!("G01") {
-                                Some(position)
-                            } else {
-                                None
-                            }
-                        })
-                        .unique()
-                        .collect();
+        }
+        for (epoch_desc, feasible) in vec![
+            ("2023-08-27T18:00:00 GPST", false),
+            ("2023-08-27T18:00:05 GPST", false),
+            ("2023-08-27T18:00:15 GPST", false),
+            ("2023-08-27T18:00:30 GPST", false),
+            ("2023-08-27T18:00:45 GPST", false),
+            ("2023-08-27T18:15:00 GPST", false),
+            ("2023-08-27T18:30:00 GPST", false),
+            ("2023-08-27T18:30:10 GPST", false),
+            ("2023-08-27T18:45:00 GPST", false),
+            ("2023-08-27T18:45:01 GPST", false),
+            ("2023-08-27T18:45:05 GPST", false),
+            ("2023-08-27T18:45:10 GPST", false),
+            ("2023-08-27T19:00:00 GPST", false),
+            ("2023-08-27T19:00:01 GPST", false),
+            ("2023-08-27T19:00:05 GPST", false),
+            ("2023-08-27T19:15:00 GPST", true),
+            ("2023-08-27T19:30:00 GPST", true),
+            ("2023-08-27T19:45:00 GPST", true),
+            ("2023-08-27T20:00:00 GPST", true),
+            ("2023-08-27T20:15:00 GPST", true),
+            ("2023-08-27T20:30:00 GPST", true),
+            ("2023-08-27T20:45:00 GPST", true),
+        ] {
+            let epoch = Epoch::from_str(epoch_desc).unwrap();
+            let interpolated = sp3.interpolate(epoch, sv!("G01"), 9);
+            assert_eq!(
+                interpolated.is_some(),
+                feasible,
+                "interpolation feasibility should be : {} for \"{}\"",
+                feasible,
+                epoch_desc
+            );
+        }
+    }
+    #[cfg(feature = "flate2")]
+    #[test]
+    fn interp() {
+        let path = PathBuf::new()
+            .join(env!("CARGO_MANIFEST_DIR"))
+            .join("data")
+            .join("EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz");
+        let sp3 = SP3::from_file(&path.to_string_lossy());
+        assert!(
+            sp3.is_ok(),
+            "failed to parse EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz"
+        );
+        let sp3 = sp3.unwrap();
+        //TODO: replace with max_error()
+        for (order, max_error) in vec![(9, 1.0E-2_64)] {
+            for (epoch, sv, position) in sp3.sv_position() {
+                let interpolated = sp3.interpolate(epoch, sv, order);
+                if let Some(interpolated) = interpolated {
+                    //println!("{} : Truth {:?} Interp {:?}", epoch, position, interpolated);
                     let err = (
-                        (position.0 - vector3d.0).abs(),
-                        (position.1 - vector3d.2).abs(),
-                        (position.2 - vector3d.1).abs(),
+                        (interpolated.0 - position.0).abs() * 1.0E3, // error in km
+                        (interpolated.1 - position.1).abs() * 1.0E3, // test:
+                        (interpolated.2 - position.2).abs() * 1.0E3, // maintain +/- 1mm precision
                     );
-                    // error in km,
-                    // maintain +/- 1mm precision
-                    //TODO: use max_error() here
-                    assert!(err.0 * 1.0E3 < 1.0E-3, "error x too large: {}", err.0);
-                    assert!(err.1 * 1.0E3 < 1.0E-3, "error y too large: {}", err.1);
-                    assert!(err.2 * 1.0E3 < 1.0E-3, "error z too large: {}", err.2);
+                    let epoch_index = sp3
+                        .epoch()
+                        .enumerate()
+                        .filter_map(|(index, e)| if e == epoch { Some(index) } else { None })
+                        .reduce(|acc, e| e)
+                        .unwrap();
+                    let total_epoch = sp3.epoch().count();
+                    assert!(
+                        err.0 < max_error,
+                        "error x too large: {} for Interp({}) @ Epoch {}/{})",
+                        err.0,
+                        order,
+                        epoch_index,
+                        total_epoch
+                    );
                 }
             }
         }
