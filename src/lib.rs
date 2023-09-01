@@ -498,6 +498,7 @@ impl SP3 {
     /// SP3 file, the earliest interpolatable Epoch is T0 + (order +1)*dt/2,
     /// and the latest is T(N-1) - (oder +1)*dt /2, where T0 is the first epoch,
     /// T(N-1) the last one, and dt the epoch interval.
+    /// See [Bibliography::Japhet2021].
     pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<Vector3D> {
         let odd_order = order % 2 > 0;
         let sv_data: Vec<_> = self

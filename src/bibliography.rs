@@ -5,9 +5,6 @@ pub enum Bibliography {
     /// SP3 -C revision specifications
     /// [DOI]()
     SP3cRev,
-    /// SP3 -C revision specifications
-    /// [DOI]()
-    SP3cRev,
     /// C. Japhet, 2021 * Méthodes Numériques II - Interpolation Polynomiale *
     /// [DOI]()
     Japhet2021,
