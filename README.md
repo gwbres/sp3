@@ -18,6 +18,7 @@ The parser only supports Revisions C & D at the moment.
 Add "sp3" to you cargo file
 
 ```toml
+[dependencies]
 sp3 = "1"
 ```
 
@@ -64,24 +65,83 @@ assert_eq!(sp3.agency, "ESOC");
 assert_eq!(sp3.week_counter, (2277, 0.0_f64));
 assert_eq!(sp3.epoch_interval, Duration::from_seconds(900.0_f64));
 
-// browse/iterate
-for (epoch, svnn, (x, y, z)) in sp3.sv_position() {
+// browse SV positions
+for (epoch, sv, (x, y, z)) in sp3.sv_position() {
+
+}
+
+// browse SV clock
+for (epoch, sv, clock) in sp3.sv_clock() {
 
 }
 ```
 
 ## File Merge
 
+Merge files together, for example to create a context spanning 48 hours
+
+```rust
+let folder = PathBuf::new()
+    .join(env!("CARGO_MANIFEST_DIR"))
+    .join("data");
+
+let sp3_a = folder.clone()
+    .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz");
+
+let sp3_b = folder.clone()
+    .join("ESA0OPSULT_20232320600_02D_15M_ORB.SP3.gz");
+
+let sp3 = SP3::from_file(&sp3_a.to_string_lossy())
+    .unwrap();
+
+let sp3_b = SP3::from_file(&sp3_b.to_string_lossy())
+    .unwrap();
+
+let sp3 = sp3_a.merge(sp3_b);
+assert!(sp3.is_ok());
+```
+
 ## Position Vector Interpolation
 
-The idea when interpolation 3D position state vectors,
-is to preserve the +/- 1mm precision of the SP3 file.  
+Interpolate SV position at desired Epoch.  
+In order to preserve the high (+/- 1mm precision) for SP3 datasets,
+we recommend using at least a 9th interpolation order, for a classical SP3 file
+sampled every 15 minutes.
 
-This library proposes a Lagrangian interpolation method that is designed to do just that.  
-For an evenly sampled SP3, one can interpolate using order N, between [tmin, tmax] both included :
+The current implementation restricts the interpolatable Epochs at 
+[tmin, tmax] = [(N +1)/2 * τ, T(n-1) - (N +1)/2 * ],
+both included, where N is the interpolation order, τ the epoch interval, and T(n-1)
+the last Epoch in this file.
 
-- tmin is T0 + (N +1)/2 *dt, where T0 is the initial Epoch
-- tmax is TN - (N +1)/2 *dt, where TN is the last Epoch encountered
+Refer to the online API for more information
 
-Refer to the online API
+```rust
+use sp3::prelude::*;
+use rinex::sv;
+use std::str::FromStr;
+use std::path::PathBuf;
+use rinex::prelude::Sv;
 
+let path = PathBuf::new()
+    .join(env!("CARGO_MANIFEST_DIR"))
+    .join("data")
+    .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz");
+
+let sp3 = SP3::from_file(&path.to_string_lossy())
+    .unwrap();
+
+let epoch = Epoch::from_str("2023-08-27T00:00:00 GPST")
+    .unwrap();
+let interpolated = sp3.interpolate(epoch, sv!("G01"), 11);
+assert!(interpolated.is_none(), "too early in this file");
+
+// let epoch = Epoch::from_str("2023-08-27T27:13:45 GPST")
+//     .unwrap();
+// let interpolated = sp3.interpolate(epoch, sv!("G01"), 11);
+// assert!(interpolated.is_some());
+// let (x, y, z) = interpolated.unwrap();
+// // demonstrate error is still sub cm
+// assert!((x - 15950.287210).abs() * 1.0E3 < 1.0E-2); // distances are expressed in km in all SP3
+// assert!((y - 13891.098497).abs() * 1.0E3 < 1.0E-2);
+// assert!((z - -16616.909377).abs() * 1.0E3 < 1.0E-2);
+```
