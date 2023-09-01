@@ -13,13 +13,21 @@ mod tests;
 
 mod header;
 mod merge;
+mod position;
 mod reader;
+mod velocity;
 mod version;
+
+#[cfg(doc_cfg)]
+mod bibliography;
 
 use header::{
     line1::{is_header_line1, Line1},
     line2::{is_header_line2, Line2},
 };
+
+use position::{position_entry, ClockRecord, PositionEntry, PositionRecord};
+use velocity::{velocity_entry, ClockRateRecord, VelocityEntry, VelocityRecord};
 
 use reader::BufferedReader;
 use std::io::BufRead;
@@ -27,6 +35,11 @@ use version::Version;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+/*
+ * 3D position
+ */
+type Vector3D = (f64, f64, f64);
 
 pub mod prelude {
     pub use crate::version::Version;
@@ -49,22 +62,6 @@ fn end_of_file(content: &str) -> bool {
     content.eq("EOF")
 }
 
-fn position_entry(content: &str) -> bool {
-    content.starts_with('P')
-}
-
-// fn possition_error(content: &str) -> bool {
-//     content.starts_with("EP")
-// }
-
-// fn velocity(content: &str) -> bool {
-//     content.starts_with('V')
-// }
-
-// fn velocity_error(content: &str) -> bool {
-//     content.starts_with("EV")
-// }
-
 fn new_epoch(content: &str) -> bool {
     content.starts_with("*  ")
 }
@@ -74,12 +71,14 @@ fn new_epoch(content: &str) -> bool {
 pub enum DataType {
     #[default]
     Position,
+    Velocity,
 }
 
 impl std::fmt::Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Position => f.write_str("P"),
+            Self::Velocity => f.write_str("V"),
         }
     }
 }
@@ -89,6 +88,8 @@ impl std::str::FromStr for DataType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.eq("P") {
             Ok(Self::Position)
+        } else if s.eq("V") {
+            Ok(Self::Velocity)
         } else {
             Err(ParsingError::UnknownDataType(s.to_string()))
         }
@@ -137,23 +138,6 @@ impl std::str::FromStr for OrbitType {
     }
 }
 
-type Position = (f64, f64, f64);
-
-/*
- * Positions
- */
-type PositionRecord = BTreeMap<Epoch, BTreeMap<Sv, Position>>;
-
-/*
- * Clock estimates
- */
-type ClockRecord = BTreeMap<Epoch, BTreeMap<Sv, f64>>;
-
-/*
- * Velocity data
- * type VelocityData = BTreeMap<Epoch, f64>;
- */
-
 /*
  * Comments contained in file
  */
@@ -164,8 +148,14 @@ type Comments = Vec<String>;
 pub struct SP3 {
     /// File revision
     pub version: Version,
+    /// Data Type used in this file.
+    /// If DataType == Velocity, you know
+    /// that velocities record will be provided.
+    /// Otherwise, that is not garanteed and kind of rare.
     pub data_type: DataType,
+    /// Coordinates system used in this file.
     pub coord_system: String,
+    /// Type of Orbit contained in this file.
     pub orbit_type: OrbitType,
     /// Agency providing this data
     pub agency: String,
@@ -191,7 +181,11 @@ pub struct SP3 {
     pub position: PositionRecord,
     /// Clock estimates in microseconds, with 1E-12 precision per Epoch and Sv.
     pub clock: ClockRecord,
-    /// Encountered comments, stored as is
+    /// Velocities (Position derivative estimates) in 10^-1 m/s with 0.1 um/s precision.
+    pub velocities: VelocityRecord,
+    /// Rate of change of clock correction in 0.1 ns/s with 0.1 fs/s precision.
+    pub clock_rate: ClockRateRecord,
+    /// File header comments, stored as is.
     pub comments: Comments,
 }
 
@@ -249,6 +243,8 @@ pub enum ParsingError {
     Sv(String),
     #[error("failed to parse (x, y, or z) coordinates from \"{0}\"")]
     Coordinates(String),
+    #[error("failed to parse clock data from \"{0}\"")]
+    Clock(String),
 }
 
 /*
@@ -288,17 +284,14 @@ impl SP3 {
     /// Parses given SP3 file, with possible seamless
     /// .gz decompression, if compiled with the "flate2" feature.
     pub fn from_file(path: &str) -> Result<Self, Errors> {
-        let mut reader = BufferedReader::new(path)?;
+        let reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
         let mut data_type = DataType::default();
 
-        let mut pc_count = 0_u8;
         let mut time_system = TimeScale::default();
         let mut constellation = Constellation::default();
-
-        //let mut start_epoch = Epoch::default();
-        //let mut nb_epochs = 0;
+        let mut pc_count = 0_u8;
 
         let mut coord_system = String::from("Unknown");
         let mut orbit_type = OrbitType::default();
@@ -309,7 +302,9 @@ impl SP3 {
 
         let mut vehicles: Vec<Sv> = Vec::new();
         let mut position = PositionRecord::default();
+        let mut velocities = VelocityRecord::default();
         let mut clock = ClockRecord::default();
+        let mut clock_rate = ClockRateRecord::default();
         let mut comments = Comments::new();
 
         let mut epoch = Epoch::default();
@@ -318,7 +313,6 @@ impl SP3 {
         for line in reader.lines() {
             let line = line.unwrap();
             let line = line.trim();
-
             if sp3_comment(line) {
                 comments.push(line[3..].to_string());
                 continue;
@@ -348,6 +342,10 @@ impl SP3 {
 
                 pc_count += 1;
             }
+            if new_epoch(line) {
+                epoch = parse_epoch(&line[3..], time_system)?;
+                epochs.push(epoch);
+            }
             if position_entry(line) {
                 if line.len() < 60 {
                     /*
@@ -355,20 +353,13 @@ impl SP3 {
                      */
                     continue;
                 }
-                let sv = Sv::from_str(line[1..4].trim())
-                    .or(Err(ParsingError::Sv(line[1..4].to_string())))?;
+                let entry = PositionEntry::from_str(line)?;
+                let (sv, (pos_x, pos_y, pos_z), clk) = entry.to_parts();
 
                 //TODO : move this into %c config frame
                 if !vehicles.contains(&sv) {
                     vehicles.push(sv);
                 }
-
-                let pos_x = f64::from_str(line[4..18].trim())
-                    .or(Err(ParsingError::Coordinates(line[4..18].to_string())))?;
-                let pos_y = f64::from_str(line[18..32].trim())
-                    .or(Err(ParsingError::Coordinates(line[18..32].to_string())))?;
-                let pos_z = f64::from_str(line[32..46].trim())
-                    .or(Err(ParsingError::Coordinates(line[32..46].to_string())))?;
 
                 if pos_x != 0.0_f64 && pos_y != 0.0_f64 && pos_z != 0.0_f64 {
                     /*
@@ -377,19 +368,15 @@ impl SP3 {
                     if let Some(e) = position.get_mut(&epoch) {
                         e.insert(sv, (pos_x, pos_y, pos_z));
                     } else {
-                        let mut map: BTreeMap<Sv, Position> = BTreeMap::new();
+                        let mut map: BTreeMap<Sv, Vector3D> = BTreeMap::new();
                         map.insert(sv, (pos_x, pos_y, pos_z));
                         position.insert(epoch, map);
                     }
                 }
-
-                if !line[46..53].trim().eq("999999.") {
+                if let Some(clk) = clk {
                     /*
                      * Clock data is present & correct
                      */
-                    let clk = f64::from_str(line[46..60].trim())
-                        .or(Err(ParsingError::Coordinates(line[46..60].to_string())))?;
-
                     if let Some(e) = clock.get_mut(&epoch) {
                         e.insert(sv, clk);
                     } else {
@@ -399,12 +386,47 @@ impl SP3 {
                     }
                 }
             }
-            if new_epoch(line) {
-                epoch = parse_epoch(&line[3..], time_system)?;
-                epochs.push(epoch);
+            if velocity_entry(line) {
+                if line.len() < 60 {
+                    /*
+                     * tolerate malformed velocities
+                     */
+                    continue;
+                }
+                let entry = VelocityEntry::from_str(line)?;
+                let (sv, (vel_x, vel_y, vel_z), clk) = entry.to_parts();
+
+                //TODO : move this into %c config frame
+                if !vehicles.contains(&sv) {
+                    vehicles.push(sv);
+                }
+
+                if vel_x != 0.0_f64 && vel_y != 0.0_f64 && vel_z != 0.0_f64 {
+                    /*
+                     * Position vector is present & correct
+                     */
+                    if let Some(e) = velocities.get_mut(&epoch) {
+                        e.insert(sv, (vel_x, vel_y, vel_z));
+                    } else {
+                        let mut map: BTreeMap<Sv, Vector3D> = BTreeMap::new();
+                        map.insert(sv, (vel_x, vel_y, vel_z));
+                        velocities.insert(epoch, map);
+                    }
+                }
+                if let Some(clk) = clk {
+                    /*
+                     * Clock data is present & correct
+                     */
+                    if let Some(e) = clock_rate.get_mut(&epoch) {
+                        e.insert(sv, clk);
+                    } else {
+                        let mut map: BTreeMap<Sv, f64> = BTreeMap::new();
+                        map.insert(sv, clk);
+                        clock_rate.insert(epoch, map);
+                    }
+                }
             }
         }
-
         Ok(Self {
             version,
             data_type,
@@ -419,7 +441,9 @@ impl SP3 {
             mjd_start,
             sv: vehicles,
             position,
+            velocities,
             clock,
+            clock_rate,
             comments,
         })
     }
@@ -446,10 +470,17 @@ impl SP3 {
     }
     /// Returns an Iterator over Sv position estimates, in km
     /// with 1mm precision.
-    pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, (f64, f64, f64))> + '_ {
+    pub fn sv_position(&self) -> impl Iterator<Item = (Epoch, Sv, Vector3D)> + '_ {
         self.position
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, pos)| (*e, *sv, *pos)))
+    }
+    /// Returns an Iterator over Sv velocities estimates,
+    /// in 10^-1 m/s with 0.1 um/s precision.
+    pub fn sv_velocities(&self) -> impl Iterator<Item = (Epoch, Sv, Vector3D)> + '_ {
+        self.velocities
+            .iter()
+            .flat_map(|(e, sv)| sv.iter().map(|(sv, vel)| (*e, *sv, *vel)))
     }
     /// Returns an Iterator over Clock error estimates, in microseconds
     /// with 1E-12 precision.
@@ -458,68 +489,76 @@ impl SP3 {
             .iter()
             .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
     }
-    /// Fit Lagrangian polynomial of desired oreder, to interpolate data at desired Epoch.
-    /// Only Odd orders are currently supported currently !
-    pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<(f64, f64, f64)> {
-        let x = epoch;
-        if order % 2 > 0 {
-            /*
-             * Only odd orders currently supported
-             */
-            return None;
-        }
-        let before: Vec<(Epoch, f64)> = self
+    /// Returns an Iterator over Clock rate of change estimates,
+    /// in 0.1 ns/s with 0.1 fs/s precision.
+    pub fn sv_clock_change(&self) -> impl Iterator<Item = (Epoch, Sv, f64)> + '_ {
+        self.clock_rate
+            .iter()
+            .flat_map(|(e, sv)| sv.iter().map(|(sv, clk)| (*e, *sv, *clk)))
+    }
+    /// Returns an Iterator over [`Comments`] contained in this file
+    pub fn comments(&self) -> impl Iterator<Item = &String> + '_ {
+        self.comments.iter()
+    }
+    /// Interpolate position vector at desired Epoch.
+    /// Interpolation order is highly dependent on the SP3 file and its
+    /// Epoch Interval in particular. An order 11 is recommended for regular SP3
+    /// with 15' Epoch Interval.
+    /// We use a window centered on desired Epoch, that means for an evenly sampled
+    /// SP3 file, the earliest interpolatable Epoch is T0 + (order +1)*dt/2,
+    /// and the latest is T(N-1) - (oder +1)*dt /2, where T0 is the first epoch,
+    /// T(N-1) the last one, and dt the epoch interval.
+    /// See [Bibliography::Japhet2021].
+    pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<Vector3D> {
+        let odd_order = order % 2 > 0;
+        let sv_data: Vec<_> = self
             .sv_position()
-            .filter_map(|(e, svnn, (x, _y, _z))| {
-                if e <= epoch && svnn == sv {
-                    Some((e, x))
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |(e, svnn, data)| {
+                    if svnn == sv {
+                        Some((e, data))
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect();
-        let after: Vec<(Epoch, f64)> = self
-            .sv_position()
-            .filter_map(|(e, svnn, (x, _y, _z))| {
-                if e > epoch && svnn == sv {
-                    Some((e, x))
-                } else {
-                    None
+        let center = sv_data
+            .iter()
+            .find(|(e, _)| (*e - epoch).abs() < self.epoch_interval);
+        if let Some(center) = center {
+            let center = sv_data.iter().position(|x| x.0 == center.0);
+            if let Some(center) = center {
+                // define window
+                let (min_before, min_after): (usize, usize) = match odd_order {
+                    true => ((order + 1) / 2, (order + 1) / 2),
+                    false => (order / 2, order / 2 + 1),
+                };
+                if center < min_before || sv_data.len() - center < min_after {
+                    return None;
                 }
-            })
-            .collect();
+                let offset = center - min_before;
 
-        if before.len() < order / 2 && after.len() < order / 2 {
-            return None; // not enough data in this window
-        }
-
-        let n = before.len();
-        let mut lagrangians: Vec<f64> = Vec::with_capacity(order);
-        let mut polynomials: Vec<f64> = Vec::with_capacity(order);
-        for i in 0..order {
-            let mut prod = 1.0_f64;
-            for j in 0..order {
-                if i == j {
-                    continue;
+                let mut polynomials = Vector3D::default();
+                for i in 0..order + 1 {
+                    let mut li = 1.0_f64;
+                    for j in 0..order + 1 {
+                        if j != i {
+                            li *= (epoch - sv_data[offset + j].0).to_seconds();
+                            li /= (sv_data[offset + i].0 - sv_data[offset + j].0).to_seconds();
+                        }
+                    }
+                    polynomials.0 += sv_data[offset + i].1 .0 * li;
+                    polynomials.1 += sv_data[offset + i].1 .1 * li;
+                    polynomials.2 += sv_data[offset + i].1 .2 * li;
                 }
-                if j > order / 2 {
-                    prod *= (x - after[j].0).to_seconds();
-                    prod /= (after[i].0 - after[j].0).to_seconds();
-                } else {
-                    prod *= (x - before[n - j].0).to_seconds();
-                    prod /= (before[n - i].0 - before[n - j].0).to_seconds();
-                }
-            }
-            lagrangians[i] = prod;
-        }
-        for i in 0..order {
-            if i > order / 2 {
-                polynomials[i] += after[i].1 * lagrangians[i];
+                Some(polynomials)
             } else {
-                polynomials[i] += before[i].1 * lagrangians[i];
+                None
             }
+        } else {
+            None
         }
-        Some((0.0_f64, 0.0_f64, 0.0_f64))
     }
 }
 
@@ -573,7 +612,9 @@ impl Merge for SP3 {
         }
         // update sampling interval (pessimistic)
         self.epoch_interval = std::cmp::max(self.epoch_interval, rhs.epoch_interval);
-
+        /*
+         * Merge possible new positions
+         */
         for (epoch, svnn) in &rhs.position {
             if let Some(lhs_sv) = self.position.get_mut(epoch) {
                 for (sv, position) in svnn {
@@ -585,7 +626,9 @@ impl Merge for SP3 {
                 self.position.insert(*epoch, svnn.clone());
             }
         }
-
+        /*
+         * Merge possible new Clock estimates
+         */
         for (epoch, svnn) in &rhs.clock {
             if let Some(lhs_sv) = self.clock.get_mut(epoch) {
                 for (sv, clock) in svnn {
@@ -594,6 +637,30 @@ impl Merge for SP3 {
             } else {
                 // introduce new epoch : in clock record
                 self.clock.insert(*epoch, svnn.clone());
+                // introduce new epoch : if not contained in positions
+                let mut found = false;
+                for e in &self.epoch {
+                    found |= *e == *epoch;
+                    if found {
+                        break;
+                    }
+                }
+                if !found {
+                    self.epoch.push(*epoch);
+                }
+            }
+        }
+        /*
+         * Merge possible new Velocities estimates
+         */
+        for (epoch, svnn) in &rhs.velocities {
+            if let Some(lhs_sv) = self.velocities.get_mut(epoch) {
+                for (sv, position) in svnn {
+                    lhs_sv.insert(*sv, *position);
+                }
+            } else {
+                // introduce new epoch
+                self.velocities.insert(*epoch, svnn.clone());
                 // introduce new epoch : if not contained in positions
                 let mut found = false;
                 for e in &self.epoch {

@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 pub enum Version {
     A,
     B,
+    /// SP3-C defined in [Bibliography::SP3cRev]
     C,
     #[default]
+    /// SP3-D defined in [Bibliography::SP3dRev]
     D,
 }
 
