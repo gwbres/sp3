@@ -109,7 +109,7 @@ we recommend using at least an interpolation order of 9 for typical SP3 files
 with 15' epoch intervals.
 
 The current implementation restricts the interpolatable Epochs at 
-[tmin, tmax] = [(N +1)/2 * τ, T(n-1) - (N +1)/2 * ],
+[tmin, tmax] = [(N +1)/2 * τ, T(n-1) - (N +1)/2 * τ],
 both included, where N is the interpolation order, τ the epoch interval, and T(n-1)
 the last Epoch in this file.
 
