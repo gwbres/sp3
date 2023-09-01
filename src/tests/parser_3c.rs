@@ -16,7 +16,7 @@ mod test {
         let sp3 = SP3::from_file(&path.to_string_lossy());
         assert!(
             sp3.is_ok(),
-            "failed to parse data/sp3d.txt: {:?}",
+            "failed to parse ESA0OPSRAP_20232390000_01D_15M_ORB.SP3.gz : {:?}",
             sp3.err()
         );
 
