@@ -1,5 +1,4 @@
 //! header line #1 parsing helper
-
 use crate::ParsingError;
 use crate::{DataType, OrbitType, Version};
 

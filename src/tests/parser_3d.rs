@@ -111,5 +111,9 @@ mod test {
                 "PLEASE EMAIL ANY COMMENT OR REQUEST TO glab.gage @upc.edu",
             ],
         );
+        let path = PathBuf::new()
+            .join(env!("CARGO_MANIFEST_DIR"))
+            .join("sp3d.txt");
+        assert!(sp3.to_file(&path.to_string_lossy()).is_ok(), "failed to generate data");
     }
 }
