@@ -110,8 +110,8 @@ impl std::str::FromStr for DataUsed {
             Ok(Self {
                 inner: vec![DataUsedUnitary::ComplexMix],
             })
-        } else if content.contains("+") {
-            let offset = content.find("+").unwrap();
+        } else if content.contains('+') {
+            let offset = content.find('+').unwrap();
             Ok(Self {
                 inner: vec![
                     DataUsedUnitary::from_str(&content[..offset])?,
@@ -141,7 +141,7 @@ impl std::fmt::Display for DataUsed {
 
 impl DataUsed {
     pub fn complex_combination(&self) -> bool {
-        if self.inner.len() == 0 {
+        if self.inner.is_empty() {
             self.inner[0] == DataUsedUnitary::ComplexMix
         } else {
             false

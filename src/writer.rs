@@ -1,6 +1,6 @@
 //! Buffered writer wrapper, for efficient data generation
 use std::fs::File;
-use std::io::{BufWriter, IoSlice, Write};
+use std::io::{BufWriter, IoSlice};
 
 pub(crate) struct BufferedWriter {
     buf: BufWriter<File>,

@@ -489,7 +489,7 @@ impl SP3 {
             self.orbit_type,
             self.agency,
         );
-        writer.write(content.as_bytes())?;
+        writer.write_all(content.as_bytes())?;
         content.clear();
 
         content = format!(
@@ -500,16 +500,16 @@ impl SP3 {
             self.mjd_start.0,
             self.mjd_start.1,
         );
-        writer.write(content.as_bytes())?;
+        writer.write_all(content.as_bytes())?;
         content.clear();
 
-        writer.write(format!("+   {}    ", self.sv().count()).as_bytes())?;
+        writer.write_all(format!("+   {}    ", self.sv().count()).as_bytes())?;
         for sv in self.sv() {
             content += &format!("{}", sv);
             if content.len() == 60 {
-                writer.write(content.as_bytes())?;
+                writer.write_all(content.as_bytes())?;
                 content.clear();
-                content = format!("+       ");
+                content = "+       ".to_string();
             }
         }
 
@@ -521,19 +521,19 @@ impl SP3 {
                 }
             }
             content += "\n";
-            writer.write(content.as_bytes())?;
+            writer.write_all(content.as_bytes())?;
         }
         content.clear();
 
         for comment in self.comments() {
-            writer.write(format!("/* {}\n", comment).as_bytes())?;
+            writer.write_all(format!("/* {}\n", comment).as_bytes())?;
         }
         for _ in 0..4 - self.comments().count() {
-            writer.write("/* \n".as_bytes())?;
+            writer.write_all("/* \n".as_bytes())?;
         }
         for epoch in self.epoch() {
             let (y, m, d, hh, mm, ss, ns) = epoch.to_gregorian_utc();
-            writer.write(
+            writer.write_all(
                 format!(
                     "*  {:04} {:02} {:02}  {:02} {:02} {:02}.{} \n",
                     y, m, d, hh, mm, ss, ns
@@ -552,12 +552,12 @@ impl SP3 {
                     },
                 );
             for (sv, pos) in pos {
-                writer.write(
+                writer.write_all(
                     format!("P{} {:6.7} {:6.7} {:6.7}\n", sv, pos.0, pos.1, pos.2).as_bytes(),
                 )?;
             }
         }
-        writer.write(format!("EOF").as_bytes())?;
+        writer.write_all("EOF".to_string().as_bytes())?;
         Ok(())
     }
     /// Returns a unique Epoch iterator where either
