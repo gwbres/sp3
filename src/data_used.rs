@@ -4,7 +4,7 @@ use crate::ParsingError;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DataUsedUnitary {
     /// Undifferenced Phases were used
@@ -33,6 +33,9 @@ pub enum DataUsedUnitary {
     DualReceiverDualCodeDerivative,
     /// Complex combination was used
     ComplexMix,
+    #[default]
+    /// A combination of Orbits from several agencies was used
+    Orbit,
 }
 
 impl std::str::FromStr for DataUsedUnitary {
@@ -62,8 +65,10 @@ impl std::str::FromStr for DataUsedUnitary {
             Ok(Self::DualReceiverDualCode)
         } else if s.eq("dD") {
             Ok(Self::DualReceiverDualCodeDerivative)
-        } else if s.eq("mixed") {
+        } else if s.to_ascii_lowercase().eq("mixed") {
             Ok(Self::ComplexMix)
+        } else if s.to_ascii_lowercase().eq("orbit") {
+            Ok(Self::Orbit)
         } else {
             Err(ParsingError::DataUsedUnitary(s.to_string()))
         }
@@ -85,14 +90,15 @@ impl std::fmt::Display for DataUsedUnitary {
             Self::DualReceiverCodeDerivative => f.write_str("dS"),
             Self::DualReceiverDualCode => f.write_str("D"),
             Self::DualReceiverDualCodeDerivative => f.write_str("dD"),
-            Self::ComplexMix => f.write_str("mixed"),
+            Self::ComplexMix => f.write_str("MIXED"),
+            Self::Orbit => f.write_str("ORBIT"),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub(crate) struct DataUsed {
+pub struct DataUsed {
     inner: Vec<DataUsedUnitary>,
 }
 
@@ -178,6 +184,7 @@ mod test {
             ("D", DataUsedUnitary::DualReceiverDualCode),
             ("dD", DataUsedUnitary::DualReceiverDualCodeDerivative),
             ("mixed", DataUsedUnitary::ComplexMix),
+            ("orbit", DataUsedUnitary::Orbit),
         ] {
             assert_eq!(
                 DataUsedUnitary::from_str(code),
@@ -240,6 +247,12 @@ mod test {
                         DataUsedUnitary::UndifferencedPhase,
                         DataUsedUnitary::UndifferencedCode,
                     ],
+                },
+            ),
+            (
+                "orbit",
+                DataUsed {
+                    inner: vec![DataUsedUnitary::Orbit],
                 },
             ),
         ] {

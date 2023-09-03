@@ -28,6 +28,7 @@ use header::{
     line2::{is_header_line2, Line2},
 };
 
+use data_used::DataUsed;
 use position::{position_entry, ClockRecord, PositionEntry, PositionRecord};
 use velocity::{velocity_entry, ClockRateRecord, VelocityEntry, VelocityRecord};
 use version::Version;
@@ -156,6 +157,8 @@ pub struct SP3 {
     /// that velocities record will be provided.
     /// Otherwise, that is not garanteed and kind of rare.
     pub data_type: DataType,
+    /// Types of data (physics) used when generating this file
+    pub data_used: DataUsed,
     /// Coordinates system used in this file.
     pub coord_system: String,
     /// Type of Orbit contained in this file.
@@ -292,6 +295,7 @@ impl SP3 {
         let reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
+        let mut data_used = DataUsed::default();
         let mut data_type = DataType::default();
 
         let mut time_system = TimeScale::default();
@@ -435,6 +439,7 @@ impl SP3 {
         Ok(Self {
             version,
             data_type,
+            data_used,
             epoch: epochs,
             time_system,
             constellation,
@@ -460,7 +465,7 @@ impl SP3 {
         let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc();
 
         content = format!(
-            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       {} {} {} {}\n",
+            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       {} {} {} {} {}\n",
             self.version,
             self.data_type,
             y,
@@ -471,6 +476,7 @@ impl SP3 {
             ss,
             ns,
             self.epoch.len(),
+            self.data_used,
             self.coord_system,
             self.orbit_type,
             self.agency,
