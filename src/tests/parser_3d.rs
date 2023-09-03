@@ -137,6 +137,20 @@ mod test {
         /*
          * TODO Test reciprocity
          */
+        let generated = SP3::from_file(&path.to_string_lossy());
+        assert!(
+            generated.is_ok(),
+            "failed to parse generated file \"{}\", error : {:?}",
+            path.to_string_lossy(),
+            generated.err()
+        );
+        let generated = generated.unwrap();
+        assert_eq!(
+            sp3,
+            generated,
+            "\"{}\" generation reciprocity test failed",
+            path.to_string_lossy()
+        );
 
         //let _ = std::fs::remove_file(&path.to_string_lossy().to_string());
     }

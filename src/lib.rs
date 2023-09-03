@@ -148,7 +148,7 @@ impl std::str::FromStr for OrbitType {
  */
 type Comments = Vec<String>;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SP3 {
     /// File revision
@@ -346,7 +346,7 @@ impl SP3 {
                 (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
             if file_descriptor(line) {
-                if line.len() < 60 {
+                if line.len() < 13 {
                     return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
                         line.to_string(),
                     )));
@@ -473,27 +473,25 @@ impl SP3 {
         let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc();
 
         content = format!(
-            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       {} {} {} {} {}\n",
-            self.version,
-            self.data_type,
-            y,
-            m,
-            d,
-            hh,
-            mm,
-            ss,
-            ns,
-            self.epoch.len(),
-            self.data_used,
-            self.coord_system,
-            self.orbit_type,
-            self.agency,
+            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       ",
+            self.version, self.data_type, y, m, d, hh, mm, ss, ns,
+        );
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!("{}   {:<3} ", self.epoch.len(), self.data_used);
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!(
+            "{} {} {:>4}\n",
+            self.coord_system, self.orbit_type, self.agency,
         );
         writer.write_all(content.as_bytes())?;
         content.clear();
 
         content = format!(
-            "## {:04}     {}      {:6.7} {} {}\n",
+            "## {:04}      {:.8}   {:.8} {} {:.13}\n",
             self.week_counter.0,
             self.week_counter.1,
             self.epoch_interval.to_seconds(),
@@ -503,9 +501,9 @@ impl SP3 {
         writer.write_all(content.as_bytes())?;
         content.clear();
 
-        writer.write_all(format!("+   {}    ", self.sv().count()).as_bytes())?;
+        content = format!("+   {}    ", self.sv().count());
         for sv in self.sv() {
-            content += &format!("{}", sv);
+            content += sv.to_string().as_str();
             if content.len() == 60 {
                 writer.write_all(content.as_bytes())?;
                 content.clear();
@@ -525,6 +523,40 @@ impl SP3 {
         }
         content.clear();
 
+        writer.write_all(
+            "++                                                          \n".as_bytes(),
+        )?;
+        writer.write_all("%c ".as_bytes())?;
+        if self.constellation == Constellation::Mixed {
+            writer.write_all("M  ".as_bytes())?;
+        } else {
+            writer.write_all(format!("{} ", self.constellation).as_bytes())?;
+        }
+
+        writer.write_all(
+            format!(
+                "cc {:x} ccc cccc cccc cccc ccccc ccccc ccccc ccccc ccccc\n",
+                self.time_system
+            )
+            .as_bytes(),
+        )?;
+
+        writer.write_all(
+            "%c cc cc ccc ccc cccc cccc cccc ccccc ccccc ccccc ccccc ccccc\n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%f                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%f                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%i                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%i                                                          \n".as_bytes(),
+        )?;
+
         for comment in self.comments() {
             writer.write_all(format!("/* {}\n", comment).as_bytes())?;
         }
@@ -535,7 +567,7 @@ impl SP3 {
             let (y, m, d, hh, mm, ss, ns) = epoch.to_gregorian_utc();
             writer.write_all(
                 format!(
-                    "*  {:04} {:02} {:02}  {:02} {:02} {:02}.{} \n",
+                    "*  {:04} {:02} {:02} {:02} {:02} {:02}.{:08} \n",
                     y, m, d, hh, mm, ss, ns
                 )
                 .as_bytes(),
@@ -553,7 +585,7 @@ impl SP3 {
                 );
             for (sv, pos) in pos {
                 writer.write_all(
-                    format!("P{} {:6.7} {:6.7} {:6.7}\n", sv, pos.0, pos.1, pos.2).as_bytes(),
+                    format!("P{} {:6.8} {:6.8} {:6.8}\n", sv, pos.0, pos.1, pos.2).as_bytes(),
                 )?;
             }
         }
