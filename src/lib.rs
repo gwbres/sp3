@@ -11,13 +11,14 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
+mod data_used;
 mod header;
 mod merge;
 mod position;
 mod reader;
-mod writer;
 mod velocity;
 mod version;
+mod writer;
 
 #[cfg(doc_cfg)]
 mod bibliography;
@@ -27,13 +28,13 @@ use header::{
     line2::{is_header_line2, Line2},
 };
 
-use version::Version;
 use position::{position_entry, ClockRecord, PositionEntry, PositionRecord};
 use velocity::{velocity_entry, ClockRateRecord, VelocityEntry, VelocityRecord};
+use version::Version;
 
 use reader::BufferedReader;
-use writer::BufferedWriter;
 use std::io::{BufRead, Write};
+use writer::BufferedWriter;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -203,7 +204,7 @@ pub enum Errors {
     FileIOError(#[from] std::io::Error),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Error)]
 pub enum ParsingError {
     #[error("unknown or non supported revision \"{0}\"")]
     UnknownVersion(String),
@@ -211,6 +212,8 @@ pub enum ParsingError {
     UnknownDataType(String),
     #[error("unknown orbit type \"{0}\"")]
     UnknownOrbitType(String),
+    #[error("unrecognized data used in production \"{0}\"")]
+    DataUsedUnitary(String),
     #[error("malformed header line #1")]
     MalformedH1,
     #[error("malformed header line #2")]
@@ -453,31 +456,36 @@ impl SP3 {
     pub fn to_file(&self, path: &str) -> Result<(), Errors> {
         let mut content = String::with_capacity(80);
         let mut writer = BufferedWriter::new(path)?;
-        let first_epoch = self.first_epoch()
-            .unwrap();
-        let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc(); 
-        
-        content = 
-            format!(
-                "#{}{:04} {:02} {:02} {:02} {:02} {:02}.{:06}    {} {} {} {}\n",
-                self.version,
-                y, m, d, hh, mm, ss, ns, 
-                self.epoch.len(),
-                self.coord_system,
-                self.orbit_type,
-                self.agency,
-            );
+        let first_epoch = self.first_epoch().unwrap();
+        let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc();
+
+        content = format!(
+            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       {} {} {} {}\n",
+            self.version,
+            self.data_type,
+            y,
+            m,
+            d,
+            hh,
+            mm,
+            ss,
+            ns,
+            self.epoch.len(),
+            self.coord_system,
+            self.orbit_type,
+            self.agency,
+        );
         writer.write(content.as_bytes())?;
         content.clear();
 
-        content = 
-            format!("## {:04}     {}      {:6.7} {} {}\n",
-                self.week_counter.0,
-                self.week_counter.1,
-                self.epoch_interval.to_seconds(),
-                self.mjd_start.0,
-                self.mjd_start.1,
-            );
+        content = format!(
+            "## {:04}     {}      {:6.7} {} {}\n",
+            self.week_counter.0,
+            self.week_counter.1,
+            self.epoch_interval.to_seconds(),
+            self.mjd_start.0,
+            self.mjd_start.1,
+        );
         writer.write(content.as_bytes())?;
         content.clear();
 
@@ -503,10 +511,10 @@ impl SP3 {
         }
         content.clear();
 
-        for comment in self.comments() { 
+        for comment in self.comments() {
             writer.write(format!("/* {}\n", comment).as_bytes())?;
         }
-        for _ in 0..4-self.comments().count() {
+        for _ in 0..4 - self.comments().count() {
             writer.write("/* \n".as_bytes())?;
         }
         for epoch in self.epoch() {
@@ -515,19 +523,23 @@ impl SP3 {
                 format!(
                     "*  {:04} {:02} {:02}  {:02} {:02} {:02}.{} \n",
                     y, m, d, hh, mm, ss, ns
-                ).as_bytes())?;
-            
-            let pos = self.sv_position()
-                .filter_map(|(e, sv, pos)| { 
-                    if e == epoch {
-                        Some((sv, pos))
-                    } else {
-                        None
-                    }
-                });
+                )
+                .as_bytes(),
+            )?;
+
+            let pos =
+                self.sv_position().filter_map(
+                    |(e, sv, pos)| {
+                        if e == epoch {
+                            Some((sv, pos))
+                        } else {
+                            None
+                        }
+                    },
+                );
             for (sv, pos) in pos {
                 writer.write(
-                    format!("P{} {:6.7} {:6.7} {:6.7}\n", sv, pos.0, pos.1, pos.2).as_bytes()
+                    format!("P{} {:6.7} {:6.7} {:6.7}\n", sv, pos.0, pos.1, pos.2).as_bytes(),
                 )?;
             }
         }
