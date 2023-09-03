@@ -106,7 +106,7 @@ impl std::str::FromStr for DataUsed {
     type Err = ParsingError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let content = s.trim();
-        if content.eq("mixed") {
+        if content.eq("MIXED") {
             Ok(Self {
                 inner: vec![DataUsedUnitary::ComplexMix],
             })
@@ -140,21 +140,21 @@ impl std::fmt::Display for DataUsed {
 }
 
 impl DataUsed {
-    fn complex_combination(&self) -> bool {
+    pub fn complex_combination(&self) -> bool {
         if self.inner.len() == 0 {
             self.inner[0] == DataUsedUnitary::ComplexMix
         } else {
             false
         }
     }
-    fn combination(&self) -> Option<(DataUsedUnitary, DataUsedUnitary)> {
+    pub fn combination(&self) -> Option<(DataUsedUnitary, DataUsedUnitary)> {
         if self.inner.len() == 2 {
             Some((self.inner[0], self.inner[1]))
         } else {
             None
         }
     }
-    fn single(&self) -> Option<DataUsedUnitary> {
+    pub fn single(&self) -> Option<DataUsedUnitary> {
         if self.inner.len() == 1 {
             Some(self.inner[0])
         } else {

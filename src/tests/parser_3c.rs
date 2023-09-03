@@ -27,6 +27,7 @@ mod test {
          */
         assert_eq!(sp3.version, Version::C);
         assert_eq!(sp3.data_type, DataType::Position);
+        assert_eq!(sp3.data_used.single(), Some(DataUsedUnitary::Orbit));
 
         assert_eq!(
             sp3.first_epoch(),

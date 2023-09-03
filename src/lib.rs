@@ -48,6 +48,7 @@ type Vector3D = (f64, f64, f64);
 pub mod prelude {
     pub use crate::version::Version;
     //pub use rinex::{Sv, Constellation};
+    pub use crate::data_used::DataUsedUnitary;
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
@@ -331,7 +332,14 @@ impl SP3 {
             }
             if is_header_line1(line) && !is_header_line2(line) {
                 let l1 = Line1::from_str(line)?;
-                (version, data_type, coord_system, orbit_type, agency) = l1.to_parts();
+                (
+                    version,
+                    data_type,
+                    data_used,
+                    coord_system,
+                    orbit_type,
+                    agency,
+                ) = l1.to_parts();
             }
             if is_header_line2(line) {
                 let l2 = Line2::from_str(line)?;

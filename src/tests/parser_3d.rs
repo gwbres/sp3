@@ -26,6 +26,19 @@ mod test {
          */
         assert_eq!(sp3.version, Version::D);
         assert_eq!(sp3.data_type, DataType::Position);
+        assert!(sp3.data_used.single().is_none(), "data used is u+U!");
+        assert!(
+            !sp3.data_used.complex_combination(),
+            "the combination of data used is defined!"
+        );
+        assert_eq!(
+            sp3.data_used.combination(),
+            Some((
+                DataUsedUnitary::UndifferencedPhase,
+                DataUsedUnitary::UndifferencedCode
+            ))
+        );
+
         assert_eq!(
             sp3.first_epoch(),
             Some(Epoch::from_str("2019-10-27T00:00:00 GPST").unwrap())
