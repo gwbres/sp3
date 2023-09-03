@@ -1,6 +1,8 @@
 //! SP3-C dedicated tests
+use super::test_equality;
 #[cfg(test)]
 mod test {
+    use super::test_equality;
     use crate::prelude::*;
     use rinex::prelude::Constellation;
     use std::path::PathBuf;
@@ -84,5 +86,29 @@ mod test {
                 "PCV:IGS20_2274 OL/AL:EOT11A   NONE     YN ORB:CoN CLK:CoN",
             ],
         );
+
+        let path = PathBuf::new()
+            .join(env!("CARGO_MANIFEST_DIR"))
+            .join("ESA0OPSRAP_20232390000_01D_15M_ORB.SP3");
+
+        assert!(
+            sp3.to_file(&path.to_string_lossy()).is_ok(),
+            "failed to generate data"
+        );
+
+        /*
+         * TODO Test reciprocity
+         */
+        let generated = SP3::from_file(&path.to_string_lossy());
+        assert!(
+            generated.is_ok(),
+            "failed to parse generated file \"{}\", error : {:?}",
+            path.to_string_lossy(),
+            generated.err()
+        );
+
+        let generated = generated.unwrap();
+        test_equality(sp3, generated, true);
+        //let _ = std::fs::remove_file(&path.to_string_lossy().to_string());
     }
 }

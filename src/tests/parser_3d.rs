@@ -1,6 +1,8 @@
 //! SP3-D dedicated tests
+use super::test_equality;
 #[cfg(test)]
 mod test {
+    use super::test_equality;
     use crate::prelude::*;
     use rinex::prelude::{Constellation, Sv};
     use rinex::sv;
@@ -144,14 +146,9 @@ mod test {
             path.to_string_lossy(),
             generated.err()
         );
-        let generated = generated.unwrap();
-        assert_eq!(
-            sp3,
-            generated,
-            "\"{}\" generation reciprocity test failed",
-            path.to_string_lossy()
-        );
 
+        let generated = generated.unwrap();
+        test_equality(sp3, generated, true);
         //let _ = std::fs::remove_file(&path.to_string_lossy().to_string());
     }
 }

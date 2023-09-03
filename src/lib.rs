@@ -1,7 +1,7 @@
 //! SP3 precise orbit file parser.
 #![cfg_attr(docrs, feature(doc_cfg))]
 
-use hifitime::{Duration, Epoch, TimeScale};
+use hifitime::{Duration, Epoch, TimeScale, Unit};
 use rinex::prelude::{Constellation, Sv};
 use std::collections::BTreeMap;
 
@@ -469,6 +469,7 @@ impl SP3 {
     pub fn to_file(&self, path: &str) -> Result<(), Errors> {
         let mut content = String::with_capacity(80);
         let mut writer = BufferedWriter::new(path)?;
+
         let first_epoch = self.first_epoch().unwrap();
         let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc();
 
