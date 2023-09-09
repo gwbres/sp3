@@ -196,7 +196,13 @@ pub enum Errors {
     #[error("hifitime parsing error")]
     HifitimeParsingError(#[from] hifitime::Errors),
     #[error("constellation parsing error")]
-    ConstellationParsingError(#[from] rinex::constellation::Error),
+    ConstellationParsingError(#[from] rinex::constellation::ParsingError),
+    #[error("unknown or non supported revision \"{0}\"")]
+    UnknownVersion(String),
+    #[error("unknown data type \"{0}\"")]
+    UnknownDataType(String),
+    #[error("unknown orbit type \"{0}\"")]
+    UnknownOrbitType(String),
     #[error("file i/o error")]
     DataParsingError(#[from] std::io::Error),
 }
