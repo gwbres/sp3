@@ -3,7 +3,7 @@
 
 use hifitime::{Duration, Epoch, TimeScale};
 use rinex::prelude::{Constellation, Sv};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use std::str::FromStr;
 use thiserror::Error;
@@ -506,65 +506,92 @@ impl SP3 {
     pub fn comments(&self) -> impl Iterator<Item = &String> + '_ {
         self.comments.iter()
     }
-    /// Interpolate position vector at desired Epoch.
-    /// Interpolation order is highly dependent on the SP3 file and its
-    /// Epoch Interval in particular. An order 11 is recommended for regular SP3
-    /// with 15' Epoch Interval.
-    /// We use a window centered on desired Epoch, that means for an evenly sampled
-    /// SP3 file, the earliest interpolatable Epoch is T0 + (order +1)*dt/2,
-    /// and the latest is T(N-1) - (oder +1)*dt /2, where T0 is the first epoch,
-    /// T(N-1) the last one, and dt the epoch interval.
-    /// See [Bibliography::Japhet2021].
-    pub fn interpolate(&self, epoch: Epoch, sv: Sv, order: usize) -> Option<Vector3D> {
+    /// Interpolate position vectors at desired Epoch `t`
+    /// for all SV for which we can define a time window
+    /// [t - order /2; t + order /2+1].
+    /// For typical SP3 files with 15' epoch interval,
+    /// an interpolation order of at least 11 is recommended to preserve
+    /// data precision.
+    /// For an evenly spaced SP3 file, operation is feasible on Epochs
+    /// contained in the interval ](N +1)/2 * τ;  T - (N +1)/2 * τ],
+    /// where N is the interpolation order, τ the epoch interval and T
+    /// the last Epoch in this file. See [Bibliography::Japhet2021].
+    pub fn sv_position_interpolate(&self, t: Epoch, order: usize) -> HashMap<Sv, Vector3D> {
+        let mut ret: HashMap<Sv, Vector3D> = HashMap::new();
         let odd_order = order % 2 > 0;
-        let sv_data: Vec<_> = self
-            .sv_position()
-            .filter_map(
-                |(e, svnn, data)| {
-                    if svnn == sv {
-                        Some((e, data))
-                    } else {
-                        None
-                    }
-                },
-            )
-            .collect();
-        let center = sv_data
-            .iter()
-            .find(|(e, _)| (*e - epoch).abs() < self.epoch_interval);
-        if let Some(center) = center {
-            let center = sv_data.iter().position(|x| x.0 == center.0);
-            if let Some(center) = center {
-                // define window
-                let (min_before, min_after): (usize, usize) = match odd_order {
-                    true => ((order + 1) / 2, (order + 1) / 2),
-                    false => (order / 2, order / 2 + 1),
-                };
-                if center < min_before || sv_data.len() - center < min_after {
-                    return None;
-                }
-                let offset = center - min_before;
 
-                let mut polynomials = Vector3D::default();
-                for i in 0..order + 1 {
-                    let mut li = 1.0_f64;
-                    for j in 0..order + 1 {
-                        if j != i {
-                            li *= (epoch - sv_data[offset + j].0).to_seconds();
-                            li /= (sv_data[offset + i].0 - sv_data[offset + j].0).to_seconds();
+        let sv_position: Vec<_> = self.sv_position().collect();
+
+        for sv in self.sv() {
+            let sv_position: Vec<_> = sv_position
+                .iter()
+                .filter_map(
+                    |(e, svnn, pos)| {
+                        if *svnn == sv {
+                            Some((*e, *pos))
+                        } else {
+                            None
                         }
-                    }
-                    polynomials.0 += sv_data[offset + i].1 .0 * li;
-                    polynomials.1 += sv_data[offset + i].1 .1 * li;
-                    polynomials.2 += sv_data[offset + i].1 .2 * li;
-                }
-                Some(polynomials)
-            } else {
-                None
+                    },
+                )
+                .collect();
+            /*
+             * Determine closest Epoch in time
+             */
+            let center = match sv_position
+                .iter()
+                .find(|(e, _)| (*e - t).abs() < self.epoch_interval)
+            {
+                Some(center) => center,
+                None => {
+                    /*
+                     * Failed to determine central Epoch for this SV:
+                     * empty data set: should not happen
+                     */
+                    continue;
+                },
+            };
+
+            // println!("CENTRAL EPOCH : {:?}", center); //DEBUG
+
+            let center_pos = match sv_position.iter().position(|(e, _)| *e == center.0) {
+                Some(center) => center,
+                None => {
+                    /* will never happen at this point*/
+                    continue;
+                },
+            };
+
+            let (min_before, min_after): (usize, usize) = match odd_order {
+                true => ((order + 1) / 2, (order + 1) / 2),
+                false => (order / 2, order / 2 + 1),
+            };
+
+            if center_pos < min_before || sv_position.len() - center_pos < min_after {
+                /* can't design time window */
+                continue;
             }
-        } else {
-            None
+
+            let mut polynomials = Vector3D::default();
+            let offset = center_pos - min_before;
+
+            for i in 0..order + 1 {
+                let mut li = 1.0_f64;
+                let (e_i, (x_i, y_i, z_i)) = sv_position[offset + i];
+                for j in 0..order + 1 {
+                    let (e_j, _) = sv_position[offset + j];
+                    if j != i {
+                        li *= (t - e_j).to_seconds();
+                        li /= (e_i - e_j).to_seconds();
+                    }
+                }
+                polynomials.0 += x_i * li;
+                polynomials.1 += y_i * li;
+                polynomials.2 += z_i * li;
+                ret.insert(sv, polynomials);
+            }
         }
+        ret
     }
 }
 
