@@ -513,9 +513,9 @@ impl SP3 {
     /// an interpolation order of at least 11 is recommended to preserve
     /// data precision.
     /// For an evenly spaced SP3 file, operation is feasible on Epochs
-    /// after tmin = (N +1)/2 * τ and prior tmax = T(n-1) - (N +1)/2 * τ,
-    /// where N is the interpolation order and τ the epoch interval.
-    /// See [Bibliography::Japhet2021].
+    /// contained in the interval ](N +1)/2 * τ;  T - (N +1)/2 * τ],
+    /// where N is the interpolation order, τ the epoch interval and T
+    /// the last Epoch in this file. See [Bibliography::Japhet2021].
     pub fn sv_position_interpolate(&self, t: Epoch, order: usize) -> HashMap<Sv, Vector3D> {
         let mut ret: HashMap<Sv, Vector3D> = HashMap::new();
         let odd_order = order % 2 > 0;
