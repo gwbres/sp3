@@ -20,88 +20,6 @@ mod test {
     }
     #[cfg(feature = "flate2")]
     #[test]
-    fn interp_feasibility() {
-        let path = PathBuf::new()
-            .join(env!("CARGO_MANIFEST_DIR"))
-            .join("data")
-            .join("EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz");
-        let sp3 = SP3::from_file(&path.to_string_lossy());
-        assert!(
-            sp3.is_ok(),
-            "failed to parse EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz"
-        );
-        let sp3 = sp3.unwrap();
-        for (epoch_desc, feasible) in vec![
-            ("2023-08-27T18:00:00 GPST", false),
-            ("2023-08-27T18:00:05 GPST", false),
-            ("2023-08-27T18:00:15 GPST", false),
-            ("2023-08-27T18:00:30 GPST", false),
-            ("2023-08-27T18:00:45 GPST", false),
-            ("2023-08-27T18:15:00 GPST", false),
-            ("2023-08-27T18:30:00 GPST", false),
-            ("2023-08-27T18:30:10 GPST", false),
-            ("2023-08-27T18:45:00 GPST", true),
-            ("2023-08-27T18:45:01 GPST", true),
-            ("2023-08-27T18:45:05 GPST", true),
-            ("2023-08-27T18:45:10 GPST", true),
-            ("2023-08-27T19:00:00 GPST", true),
-            ("2023-08-27T19:00:01 GPST", true),
-            ("2023-08-27T19:00:05 GPST", true),
-            ("2023-08-27T19:15:00 GPST", true),
-            ("2023-08-27T19:30:00 GPST", true),
-            ("2023-08-27T19:45:00 GPST", true),
-            ("2023-08-27T20:00:00 GPST", true),
-            ("2023-08-27T20:15:00 GPST", true),
-            ("2023-08-27T20:30:00 GPST", true),
-            ("2023-08-27T20:45:00 GPST", true),
-        ] {
-            let epoch = Epoch::from_str(epoch_desc).unwrap();
-            let interpolated = sp3.interpolate(epoch, sv!("G01"), 5);
-            assert_eq!(
-                interpolated.is_some(),
-                feasible,
-                "interpolation feasibility should be : {} for \"{}\"",
-                feasible,
-                epoch_desc
-            );
-        }
-        for (epoch_desc, feasible) in vec![
-            ("2023-08-27T18:00:00 GPST", false),
-            ("2023-08-27T18:00:05 GPST", false),
-            ("2023-08-27T18:00:15 GPST", false),
-            ("2023-08-27T18:00:30 GPST", false),
-            ("2023-08-27T18:00:45 GPST", false),
-            ("2023-08-27T18:15:00 GPST", false),
-            ("2023-08-27T18:30:00 GPST", false),
-            ("2023-08-27T18:30:10 GPST", false),
-            ("2023-08-27T18:45:00 GPST", false),
-            ("2023-08-27T18:45:01 GPST", false),
-            ("2023-08-27T18:45:05 GPST", false),
-            ("2023-08-27T18:45:10 GPST", false),
-            ("2023-08-27T19:00:00 GPST", false),
-            ("2023-08-27T19:00:01 GPST", false),
-            ("2023-08-27T19:00:05 GPST", false),
-            ("2023-08-27T19:15:00 GPST", true),
-            ("2023-08-27T19:30:00 GPST", true),
-            ("2023-08-27T19:45:00 GPST", true),
-            ("2023-08-27T20:00:00 GPST", true),
-            ("2023-08-27T20:15:00 GPST", true),
-            ("2023-08-27T20:30:00 GPST", true),
-            ("2023-08-27T20:45:00 GPST", true),
-        ] {
-            let epoch = Epoch::from_str(epoch_desc).unwrap();
-            let interpolated = sp3.interpolate(epoch, sv!("G01"), 9);
-            assert_eq!(
-                interpolated.is_some(),
-                feasible,
-                "interpolation feasibility should be : {} for \"{}\"",
-                feasible,
-                epoch_desc
-            );
-        }
-    }
-    #[cfg(feature = "flate2")]
-    #[test]
     fn interp() {
         let path = PathBuf::new()
             .join(env!("CARGO_MANIFEST_DIR"))
@@ -112,32 +30,82 @@ mod test {
             sp3.is_ok(),
             "failed to parse EMR0OPSULT_20232391800_02D_15M_ORB.SP3.gz"
         );
+
         let sp3 = sp3.unwrap();
+
+        let first_epoch = sp3.first_epoch().expect("failed to determine 1st epoch");
+
+        let last_epoch = sp3.last_epoch().expect("failed to determine last epoch");
+
+        let dt = sp3.epoch_interval;
+        let total_epochs = sp3.epoch().count();
+
         //TODO: replace with max_error()
-        for (order, max_error) in vec![(9, 1.0E-2_64)] {
-            for (epoch, sv, position) in sp3.sv_position() {
-                let interpolated = sp3.interpolate(epoch, sv, order);
-                if let Some(interpolated) = interpolated {
-                    //println!("{} : Truth {:?} Interp {:?}", epoch, position, interpolated);
-                    let err = (
-                        (interpolated.0 - position.0).abs() * 1.0E3, // error in km
-                        (interpolated.1 - position.1).abs() * 1.0E3, // test:
-                        (interpolated.2 - position.2).abs() * 1.0E3, // maintain +/- 1mm precision
+        for (order, max_error) in vec![(7, 1E-1_f64), (9, 1.0E-2_64), (11, 0.5E-3_f64)] {
+            let tmin = first_epoch + (order / 2) * dt;
+            let tmax = last_epoch - (order / 2) * dt;
+            println!("running Interp({}) testbench..", order);
+            //DEBUG
+            for (index, epoch) in sp3.epoch().enumerate() {
+                let feasible = epoch > tmin && epoch <= tmax;
+                let interpolated = sp3.sv_position_interpolate(epoch, order as usize);
+                let achieved = interpolated.len() > 0;
+                //DEBUG
+                //println!("tmin: {} | tmax: {} | epoch: {} | feasible : {} | achieved: {}", tmin, tmax, epoch, feasible, achieved);
+                if feasible {
+                    assert!(
+                        achieved == feasible,
+                        "interpolation should have been feasible @ epoch {}",
+                        epoch,
                     );
-                    let epoch_index = sp3
-                        .epoch()
-                        .enumerate()
-                        .filter_map(|(index, e)| if e == epoch { Some(index) } else { None })
-                        .reduce(|acc, e| e)
-                        .unwrap();
-                    let total_epoch = sp3.epoch().count();
+                } else {
+                    assert!(
+                        achieved == feasible,
+                        "interpolation should not have been feasible @ epoch {}",
+                        epoch,
+                    );
+                }
+                /*
+                 * test interpolation errors
+                 */
+                for (sv, (x, y, z)) in interpolated {
+                    let truth = sp3
+                        .sv_position()
+                        .find(|(t, svnn, (sv_x, sv_y, sv_z))| {
+                            *svnn == sv && *t == epoch && x == *sv_x && y == *sv_y && z == *sv_z
+                        })
+                        .unwrap(); // infaillible
+                    let err = (
+                        (x - truth.2 .0).abs() * 1.0E3, // error in km
+                        (y - truth.2 .1).abs() * 1.0E3,
+                        (z - truth.2 .2).abs() * 1.0E3,
+                    );
                     assert!(
                         err.0 < max_error,
-                        "error x too large: {} for Interp({}) @ Epoch {}/{})",
+                        "x error too large: {} for Interp({}) for {} @ Epoch {}/{}",
                         err.0,
                         order,
-                        epoch_index,
-                        total_epoch
+                        sv,
+                        index,
+                        total_epochs,
+                    );
+                    assert!(
+                        err.1 < max_error,
+                        "y error too large: {} for Interp({}) for {} @ Epoch {}/{}",
+                        err.1,
+                        order,
+                        sv,
+                        index,
+                        total_epochs,
+                    );
+                    assert!(
+                        err.2 < max_error,
+                        "z error too large: {} for Interp({}) for {} @ Epoch {}/{}",
+                        err.2,
+                        order,
+                        sv,
+                        index,
+                        total_epochs,
                     );
                 }
             }
