@@ -506,9 +506,7 @@ impl SP3 {
     pub fn comments(&self) -> impl Iterator<Item = &String> + '_ {
         self.comments.iter()
     }
-    /// Interpolate position vectors at desired Epoch `t`
-    /// for all SV for which we can define a time window
-    /// [t - order /2; t + order /2+1].
+    /// Interpolate SV position vectors at desired Epoch `t`.
     /// For typical SP3 files with 15' epoch interval,
     /// an interpolation order of at least 11 is recommended to preserve
     /// data precision.
@@ -516,82 +514,75 @@ impl SP3 {
     /// contained in the interval ](N +1)/2 * τ;  T - (N +1)/2 * τ],
     /// where N is the interpolation order, τ the epoch interval and T
     /// the last Epoch in this file. See [Bibliography::Japhet2021].
-    pub fn sv_position_interpolate(&self, t: Epoch, order: usize) -> HashMap<Sv, Vector3D> {
+    pub fn sv_position_interpolate(&self, sv: Sv, t: Epoch, order: usize) -> Option<Vector3D> {
         let mut ret: HashMap<Sv, Vector3D> = HashMap::new();
         let odd_order = order % 2 > 0;
 
-        let sv_position: Vec<_> = self.sv_position().collect();
-
-        for sv in self.sv() {
-            let sv_position: Vec<_> = sv_position
-                .iter()
-                .filter_map(
-                    |(e, svnn, pos)| {
-                        if *svnn == sv {
-                            Some((*e, *pos))
-                        } else {
-                            None
-                        }
-                    },
-                )
-                .collect();
-            /*
-             * Determine closest Epoch in time
-             */
-            let center = match sv_position
-                .iter()
-                .find(|(e, _)| (*e - t).abs() < self.epoch_interval)
-            {
-                Some(center) => center,
-                None => {
-                    /*
-                     * Failed to determine central Epoch for this SV:
-                     * empty data set: should not happen
-                     */
-                    continue;
-                },
-            };
-
-            // println!("CENTRAL EPOCH : {:?}", center); //DEBUG
-
-            let center_pos = match sv_position.iter().position(|(e, _)| *e == center.0) {
-                Some(center) => center,
-                None => {
-                    /* will never happen at this point*/
-                    continue;
-                },
-            };
-
-            let (min_before, min_after): (usize, usize) = match odd_order {
-                true => ((order + 1) / 2, (order + 1) / 2),
-                false => (order / 2, order / 2 + 1),
-            };
-
-            if center_pos < min_before || sv_position.len() - center_pos < min_after {
-                /* can't design time window */
-                continue;
-            }
-
-            let mut polynomials = Vector3D::default();
-            let offset = center_pos - min_before;
-
-            for i in 0..order + 1 {
-                let mut li = 1.0_f64;
-                let (e_i, (x_i, y_i, z_i)) = sv_position[offset + i];
-                for j in 0..order + 1 {
-                    let (e_j, _) = sv_position[offset + j];
-                    if j != i {
-                        li *= (t - e_j).to_seconds();
-                        li /= (e_i - e_j).to_seconds();
-                    }
+        let sv_position: Vec<_> = self
+            .sv_position()
+            .filter_map(|(e, svnn, (x, y, z))| {
+                if sv == svnn {
+                    Some((e, (x, y, z)))
+                } else {
+                    None
                 }
-                polynomials.0 += x_i * li;
-                polynomials.1 += y_i * li;
-                polynomials.2 += z_i * li;
-                ret.insert(sv, polynomials);
-            }
+            })
+            .collect();
+
+        /*
+         * Determine closest Epoch in time
+         */
+        let center = match sv_position
+            .iter()
+            .find(|(e, _)| (*e - t).abs() < self.epoch_interval)
+        {
+            Some(center) => center,
+            None => {
+                /*
+                 * Failed to determine central Epoch for this SV:
+                 * empty data set: should not happen
+                 */
+                return None;
+            },
+        };
+        // println!("CENTRAL EPOCH : {:?}", center); //DEBUG
+
+        let center_pos = match sv_position.iter().position(|(e, _)| *e == center.0) {
+            Some(center) => center,
+            None => {
+                /* will never happen at this point*/
+                return None;
+            },
+        };
+
+        let (min_before, min_after): (usize, usize) = match odd_order {
+            true => ((order + 1) / 2, (order + 1) / 2),
+            false => (order / 2, order / 2 + 1),
+        };
+
+        if center_pos < min_before || sv_position.len() - center_pos < min_after {
+            /* can't design time window */
+            return None;
         }
-        ret
+
+        let mut polynomials = Vector3D::default();
+        let offset = center_pos - min_before;
+
+        for i in 0..order + 1 {
+            let mut li = 1.0_f64;
+            let (e_i, (x_i, y_i, z_i)) = sv_position[offset + i];
+            for j in 0..order + 1 {
+                let (e_j, _) = sv_position[offset + j];
+                if j != i {
+                    li *= (t - e_j).to_seconds();
+                    li /= (e_i - e_j).to_seconds();
+                }
+            }
+            polynomials.0 += x_i * li;
+            polynomials.1 += y_i * li;
+            polynomials.2 += z_i * li;
+        }
+        Some(polynomials)
     }
 }
 

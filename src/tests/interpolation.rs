@@ -46,10 +46,10 @@ mod test {
             let tmax = last_epoch - (order / 2) * dt;
             println!("running Interp({}) testbench..", order);
             //DEBUG
-            for (index, epoch) in sp3.epoch().enumerate() {
+            for (index, (epoch, sv, (x, y, z))) in sp3.sv_position().enumerate() {
                 let feasible = epoch > tmin && epoch <= tmax;
-                let interpolated = sp3.sv_position_interpolate(epoch, order as usize);
-                let achieved = interpolated.len() > 0;
+                let interpolated = sp3.sv_position_interpolate(sv, epoch, order as usize);
+                let achieved = interpolated.is_some();
                 //DEBUG
                 //println!("tmin: {} | tmax: {} | epoch: {} | feasible : {} | achieved: {}", tmin, tmax, epoch, feasible, achieved);
                 if feasible {
@@ -65,49 +65,45 @@ mod test {
                         epoch,
                     );
                 }
+                if !feasible {
+                    continue;
+                }
                 /*
                  * test interpolation errors
                  */
-                for (sv, (x, y, z)) in interpolated {
-                    let truth = sp3
-                        .sv_position()
-                        .find(|(t, svnn, (sv_x, sv_y, sv_z))| {
-                            *svnn == sv && *t == epoch && x == *sv_x && y == *sv_y && z == *sv_z
-                        })
-                        .unwrap(); // infaillible
-                    let err = (
-                        (x - truth.2 .0).abs() * 1.0E3, // error in km
-                        (y - truth.2 .1).abs() * 1.0E3,
-                        (z - truth.2 .2).abs() * 1.0E3,
-                    );
-                    assert!(
-                        err.0 < max_error,
-                        "x error too large: {} for Interp({}) for {} @ Epoch {}/{}",
-                        err.0,
-                        order,
-                        sv,
-                        index,
-                        total_epochs,
-                    );
-                    assert!(
-                        err.1 < max_error,
-                        "y error too large: {} for Interp({}) for {} @ Epoch {}/{}",
-                        err.1,
-                        order,
-                        sv,
-                        index,
-                        total_epochs,
-                    );
-                    assert!(
-                        err.2 < max_error,
-                        "z error too large: {} for Interp({}) for {} @ Epoch {}/{}",
-                        err.2,
-                        order,
-                        sv,
-                        index,
-                        total_epochs,
-                    );
-                }
+                let (x_interp, y_interp, z_interp) = interpolated.unwrap();
+                let err = (
+                    (x_interp - x).abs() * 1.0E3, // error in km
+                    (y_interp - y).abs() * 1.0E3,
+                    (z_interp - z).abs() * 1.0E3,
+                );
+                assert!(
+                    err.0 < max_error,
+                    "x error too large: {} for Interp({}) for {} @ Epoch {}/{}",
+                    err.0,
+                    order,
+                    sv,
+                    index,
+                    total_epochs,
+                );
+                assert!(
+                    err.1 < max_error,
+                    "y error too large: {} for Interp({}) for {} @ Epoch {}/{}",
+                    err.1,
+                    order,
+                    sv,
+                    index,
+                    total_epochs,
+                );
+                assert!(
+                    err.2 < max_error,
+                    "z error too large: {} for Interp({}) for {} @ Epoch {}/{}",
+                    err.2,
+                    order,
+                    sv,
+                    index,
+                    total_epochs,
+                );
             }
         }
     }
