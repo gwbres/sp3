@@ -506,7 +506,7 @@ impl SP3 {
     pub fn comments(&self) -> impl Iterator<Item = &String> + '_ {
         self.comments.iter()
     }
-    /// Interpolate SV position vectors at desired Epoch `t`.
+    /// Interpolate SV position, expressed in kilometers ECEF at desired Epoch `t`.
     /// For typical SP3 files with 15' epoch interval,
     /// an interpolation order of at least 11 is recommended to preserve
     /// data precision.
@@ -515,9 +515,7 @@ impl SP3 {
     /// where N is the interpolation order, τ the epoch interval and T
     /// the last Epoch in this file. See [Bibliography::Japhet2021].
     pub fn sv_position_interpolate(&self, sv: Sv, t: Epoch, order: usize) -> Option<Vector3D> {
-        let mut ret: HashMap<Sv, Vector3D> = HashMap::new();
         let odd_order = order % 2 > 0;
-
         let sv_position: Vec<_> = self
             .sv_position()
             .filter_map(|(e, svnn, (x, y, z))| {
@@ -528,7 +526,6 @@ impl SP3 {
                 }
             })
             .collect();
-
         /*
          * Determine closest Epoch in time
          */
@@ -546,7 +543,6 @@ impl SP3 {
             },
         };
         // println!("CENTRAL EPOCH : {:?}", center); //DEBUG
-
         let center_pos = match sv_position.iter().position(|(e, _)| *e == center.0) {
             Some(center) => center,
             None => {
@@ -582,6 +578,7 @@ impl SP3 {
             polynomials.1 += y_i * li;
             polynomials.2 += z_i * li;
         }
+
         Some(polynomials)
     }
 }
