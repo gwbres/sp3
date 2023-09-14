@@ -1,7 +1,7 @@
 //! SP3 precise orbit file parser.
 #![cfg_attr(docrs, feature(doc_cfg))]
 
-use hifitime::{Duration, Epoch, TimeScale};
+use hifitime::{Duration, Epoch, TimeScale, Unit};
 use rinex::prelude::{Constellation, Sv};
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,12 +11,14 @@ use thiserror::Error;
 #[cfg(test)]
 mod tests;
 
+mod data_used;
 mod header;
 mod merge;
 mod position;
 mod reader;
 mod velocity;
 mod version;
+mod writer;
 
 #[cfg(doc_cfg)]
 mod bibliography;
@@ -26,12 +28,14 @@ use header::{
     line2::{is_header_line2, Line2},
 };
 
+use data_used::DataUsed;
 use position::{position_entry, ClockRecord, PositionEntry, PositionRecord};
 use velocity::{velocity_entry, ClockRateRecord, VelocityEntry, VelocityRecord};
+use version::Version;
 
 use reader::BufferedReader;
-use std::io::BufRead;
-use version::Version;
+use std::io::{BufRead, Write};
+use writer::BufferedWriter;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -44,6 +48,7 @@ type Vector3D = (f64, f64, f64);
 pub mod prelude {
     pub use crate::version::Version;
     //pub use rinex::{Sv, Constellation};
+    pub use crate::data_used::DataUsedUnitary;
     pub use crate::{DataType, OrbitType, SP3};
     pub use hifitime::{Duration, Epoch, TimeScale};
 }
@@ -143,7 +148,7 @@ impl std::str::FromStr for OrbitType {
  */
 type Comments = Vec<String>;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SP3 {
     /// File revision
@@ -153,6 +158,8 @@ pub struct SP3 {
     /// that velocities record will be provided.
     /// Otherwise, that is not garanteed and kind of rare.
     pub data_type: DataType,
+    /// Types of data (physics) used when generating this file
+    pub data_used: DataUsed,
     /// Coordinates system used in this file.
     pub coord_system: String,
     /// Type of Orbit contained in this file.
@@ -204,10 +211,10 @@ pub enum Errors {
     #[error("unknown orbit type \"{0}\"")]
     UnknownOrbitType(String),
     #[error("file i/o error")]
-    DataParsingError(#[from] std::io::Error),
+    FileIOError(#[from] std::io::Error),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Error)]
 pub enum ParsingError {
     #[error("unknown or non supported revision \"{0}\"")]
     UnknownVersion(String),
@@ -215,6 +222,8 @@ pub enum ParsingError {
     UnknownDataType(String),
     #[error("unknown orbit type \"{0}\"")]
     UnknownOrbitType(String),
+    #[error("unrecognized data used in production \"{0}\"")]
+    DataUsedUnitary(String),
     #[error("malformed header line #1")]
     MalformedH1,
     #[error("malformed header line #2")]
@@ -293,6 +302,7 @@ impl SP3 {
         let reader = BufferedReader::new(path)?;
 
         let mut version = Version::default();
+        let mut data_used = DataUsed::default();
         let mut data_type = DataType::default();
 
         let mut time_system = TimeScale::default();
@@ -328,14 +338,21 @@ impl SP3 {
             }
             if is_header_line1(line) && !is_header_line2(line) {
                 let l1 = Line1::from_str(line)?;
-                (version, data_type, coord_system, orbit_type, agency) = l1.to_parts();
+                (
+                    version,
+                    data_type,
+                    data_used,
+                    coord_system,
+                    orbit_type,
+                    agency,
+                ) = l1.to_parts();
             }
             if is_header_line2(line) {
                 let l2 = Line2::from_str(line)?;
                 (week_counter, epoch_interval, mjd_start) = l2.to_parts();
             }
             if file_descriptor(line) {
-                if line.len() < 60 {
+                if line.len() < 13 {
                     return Err(Errors::ParsingError(ParsingError::MalformedDescriptor(
                         line.to_string(),
                     )));
@@ -436,6 +453,7 @@ impl SP3 {
         Ok(Self {
             version,
             data_type,
+            data_used,
             epoch: epochs,
             time_system,
             constellation,
@@ -452,6 +470,134 @@ impl SP3 {
             clock_rate,
             comments,
         })
+    }
+    /// Generates SP3 file from Self's content
+    pub fn to_file(&self, path: &str) -> Result<(), Errors> {
+        let mut content = String::with_capacity(80);
+        let mut writer = BufferedWriter::new(path)?;
+
+        let first_epoch = self.first_epoch().unwrap();
+        let (y, m, d, hh, mm, ss, ns) = first_epoch.to_gregorian_utc();
+
+        content = format!(
+            "#{}{}{:04} {:02} {:02} {:02} {:02} {:02}.{:08}       ",
+            self.version, self.data_type, y, m, d, hh, mm, ss, ns,
+        );
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!("{}   {:<3} ", self.epoch.len(), self.data_used);
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!(
+            "{} {} {:>4}\n",
+            self.coord_system, self.orbit_type, self.agency,
+        );
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!(
+            "## {:04}      {:.8}   {:.8} {} {:.13}\n",
+            self.week_counter.0,
+            self.week_counter.1,
+            self.epoch_interval.to_seconds(),
+            self.mjd_start.0,
+            self.mjd_start.1,
+        );
+        writer.write_all(content.as_bytes())?;
+        content.clear();
+
+        content = format!("+   {}    ", self.sv().count());
+        for sv in self.sv() {
+            content += sv.to_string().as_str();
+            if content.len() == 60 {
+                writer.write_all(content.as_bytes())?;
+                content.clear();
+                content = "+       ".to_string();
+            }
+        }
+
+        if content.len() < 60 {
+            loop {
+                content += " 00";
+                if content.len() == 60 {
+                    break;
+                }
+            }
+            content += "\n";
+            writer.write_all(content.as_bytes())?;
+        }
+        content.clear();
+
+        writer.write_all(
+            "++                                                          \n".as_bytes(),
+        )?;
+        writer.write_all("%c ".as_bytes())?;
+        if self.constellation == Constellation::Mixed {
+            writer.write_all("M  ".as_bytes())?;
+        } else {
+            writer.write_all(format!("{} ", self.constellation).as_bytes())?;
+        }
+
+        writer.write_all(
+            format!(
+                "cc {:x} ccc cccc cccc cccc ccccc ccccc ccccc ccccc ccccc\n",
+                self.time_system
+            )
+            .as_bytes(),
+        )?;
+
+        writer.write_all(
+            "%c cc cc ccc ccc cccc cccc cccc ccccc ccccc ccccc ccccc ccccc\n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%f                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%f                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%i                                                          \n".as_bytes(),
+        )?;
+        writer.write_all(
+            "%i                                                          \n".as_bytes(),
+        )?;
+
+        for comment in self.comments() {
+            writer.write_all(format!("/* {}\n", comment).as_bytes())?;
+        }
+        for _ in 0..4 - self.comments().count() {
+            writer.write_all("/* \n".as_bytes())?;
+        }
+        for epoch in self.epoch() {
+            let (y, m, d, hh, mm, ss, ns) = epoch.to_gregorian_utc();
+            writer.write_all(
+                format!(
+                    "*  {:04} {:02} {:02} {:02} {:02} {:02}.{:08} \n",
+                    y, m, d, hh, mm, ss, ns
+                )
+                .as_bytes(),
+            )?;
+
+            let pos =
+                self.sv_position().filter_map(
+                    |(e, sv, pos)| {
+                        if e == epoch {
+                            Some((sv, pos))
+                        } else {
+                            None
+                        }
+                    },
+                );
+            for (sv, pos) in pos {
+                writer.write_all(
+                    format!("P{} {:6.8} {:6.8} {:6.8}\n", sv, pos.0, pos.1, pos.2).as_bytes(),
+                )?;
+            }
+        }
+        writer.write_all("EOF".to_string().as_bytes())?;
+        Ok(())
     }
     /// Returns a unique Epoch iterator where either
     /// Position or Clock data is provided.

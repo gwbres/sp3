@@ -1,6 +1,8 @@
 //! SP3-D dedicated tests
+use super::test_equality;
 #[cfg(test)]
 mod test {
+    use super::test_equality;
     use crate::prelude::*;
     use rinex::prelude::{Constellation, Sv};
     use rinex::sv;
@@ -26,6 +28,19 @@ mod test {
          */
         assert_eq!(sp3.version, Version::D);
         assert_eq!(sp3.data_type, DataType::Position);
+        assert!(sp3.data_used.single().is_none(), "data used is u+U!");
+        assert!(
+            !sp3.data_used.complex_combination(),
+            "the combination of data used is defined!"
+        );
+        assert_eq!(
+            sp3.data_used.combination(),
+            Some((
+                DataUsedUnitary::UndifferencedPhase,
+                DataUsedUnitary::UndifferencedCode
+            ))
+        );
+
         assert_eq!(
             sp3.first_epoch(),
             Some(Epoch::from_str("2019-10-27T00:00:00 GPST").unwrap())
@@ -111,5 +126,29 @@ mod test {
                 "PLEASE EMAIL ANY COMMENT OR REQUEST TO glab.gage @upc.edu",
             ],
         );
+
+        let path = PathBuf::new()
+            .join(env!("CARGO_MANIFEST_DIR"))
+            .join("sp3d.txt");
+
+        assert!(
+            sp3.to_file(&path.to_string_lossy()).is_ok(),
+            "failed to generate data"
+        );
+
+        /*
+         * TODO Test reciprocity
+         */
+        let generated = SP3::from_file(&path.to_string_lossy());
+        assert!(
+            generated.is_ok(),
+            "failed to parse generated file \"{}\", error : {:?}",
+            path.to_string_lossy(),
+            generated.err()
+        );
+
+        let generated = generated.unwrap();
+        test_equality(sp3, generated, true);
+        //let _ = std::fs::remove_file(&path.to_string_lossy().to_string());
     }
 }
