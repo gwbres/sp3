@@ -7,4 +7,4 @@
 SP3 Precise GNSS Orbit files parser.   
 SP3 is specifid by [IGS](https://igs.org/products/#orbits_clocks).
 
-This crate has been integrated to the [georust ecosystem](https://github.com/georust/rinex)
+This library is now part of the [RTK-rs framework](https://github.com/rtk-rs/sp3)
